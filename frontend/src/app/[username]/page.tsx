@@ -19,14 +19,23 @@ export default async function Profile({ params }: { params: { username: string }
   }
 
   const isSelf = currentUser && currentUser.username === username;
+  const S3_URL = process.env.NEXT_PUBLIC_S3_PUBLIC_URL || "http://localhost:9000/twit-media";
 
   return (
     <div className={styles.page}>
       <header className={styles.header}>
         <a href="/" className={styles.logo}>Twit</a>
+        {isSelf && <a href="/settings" className={styles.link}>Edit Profile</a>}
       </header>
       <main className={styles.main}>
         <div className={styles.profileHeader}>
+          <div className={styles.profileAvatar}>
+            {profile.avatar_url ? (
+              <img src={`${S3_URL}/${profile.avatar_url}`} alt="Avatar" className={styles.avatarLarge} />
+            ) : (
+              <div className={styles.avatarPlaceholder} />
+            )}
+          </div>
           <div className={styles.profileInfo}>
             <h1>{profile.display_name || profile.username}</h1>
             <p className={styles.username}>@{profile.username}</p>

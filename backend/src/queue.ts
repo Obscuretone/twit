@@ -9,6 +9,7 @@ export async function connectQueue() {
     channel = await connection.createChannel();
     await channel.assertQueue('mentions');
     await channel.assertQueue('feeds');
+    await channel.assertQueue('notifications');
     console.log('Connected to RabbitMQ');
   } catch (err) {
     console.error('Failed to connect to RabbitMQ:', err);

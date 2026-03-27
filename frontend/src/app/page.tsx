@@ -14,6 +14,7 @@ export default async function Home() {
         <div className={styles.logo}>Twit</div>
         {user && (
           <div className={styles.userInfo}>
+            <a href="/notifications" className={styles.link}>Notifications</a>
             <span>@{user.username}</span>
             <form action={logout}>
               <button type="submit" className={styles.logoutLink}>Log Out</button>

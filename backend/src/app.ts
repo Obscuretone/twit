@@ -129,6 +129,9 @@ app.post('/api/follow/:username', async (req, res) => {
       following_id: userToFollow.id
     }).onConflict(['follower_id', 'following_id']).ignore();
 
+    // Trigger notification
+    sendToQueue('notifications', { user_id: userToFollow.id, from_user_id: decoded.id, type: 'follow' });
+
     res.status(200).json({ success: true });
   } catch (err) {
     res.status(401).json({ error: 'Invalid token' });
@@ -172,6 +175,27 @@ app.get('/api/users/:username', async (req, res) => {
     res.json({ ...user, followers_count: follows?.count, following_count: following?.count });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// NOTIFICATIONS
+app.get('/api/notifications', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const notifications = await db('notifications')
+      .join('users', 'notifications.from_user_id', 'users.id')
+      .leftJoin('tweets', 'notifications.tweet_id', 'tweets.id')
+      .where('notifications.user_id', decoded.id)
+      .select('notifications.*', 'users.username as from_username', 'tweets.content as tweet_content')
+      .orderBy('notifications.created_at', 'desc')
+      .limit(50);
+    res.json(notifications);
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
   }
 });
 

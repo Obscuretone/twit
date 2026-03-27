@@ -61,6 +61,55 @@ app.get('/api/tweets', async (req, res) => {
   }
 });
 
+// PERSONALIZED FEED
+app.get('/api/feed', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const cacheKey = `feed_${decoded.id}`;
+    
+    // 1. Try to get tweet IDs from Memcached
+    const cachedFeed = await cache.get(cacheKey);
+    let tweetIds: string[] = [];
+    
+    if (cachedFeed && cachedFeed.value) {
+      tweetIds = JSON.parse(cachedFeed.value.toString());
+    }
+
+    if (tweetIds.length > 0) {
+      // 2. Fetch full tweets for these IDs from DB
+      const tweets = await db('tweets')
+        .join('users', 'tweets.user_id', 'users.id')
+        .whereIn('tweets.id', tweetIds)
+        .select('tweets.*', 'users.username', 'users.display_name')
+        .orderBy('tweets.created_at', 'desc');
+      return res.json(tweets);
+    }
+
+    // 3. Cache miss: Fallback to DB query
+    const tweets = await db('tweets')
+      .join('users', 'tweets.user_id', 'users.id')
+      .join('follows', 'tweets.user_id', 'follows.following_id')
+      .where('follows.follower_id', decoded.id)
+      .select('tweets.*', 'users.username', 'users.display_name')
+      .orderBy('tweets.created_at', 'desc')
+      .limit(100);
+
+    // 4. Optionally populate cache in background
+    if (tweets.length > 0) {
+      const idsToCache = tweets.map((t: any) => t.id);
+      cache.set(cacheKey, JSON.stringify(idsToCache), { expires: 86400 });
+    }
+
+    res.json(tweets);
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
 // FOLLOWS
 app.post('/api/follow/:username', async (req, res) => {
   const authHeader = req.headers.authorization;

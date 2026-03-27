@@ -1,12 +1,12 @@
 import styles from "./page.module.css";
 import { getSession, logout } from "../actions/auth";
-import { getTweets } from "../actions/tweets";
+import { getTweets, getFeed } from "../actions/tweets";
 import TweetForm from "../components/TweetForm";
 import TweetList from "../components/TweetList";
 
 export default async function Home() {
   const user = await getSession();
-  const tweets = await getTweets();
+  const tweets = user ? await getFeed() : await getTweets();
 
   return (
     <div className={styles.page}>

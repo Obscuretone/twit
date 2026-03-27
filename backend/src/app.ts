@@ -7,6 +7,7 @@ import cache from './cache';
 import { sendToQueue } from './queue';
 import multer from 'multer';
 import { uploadFile } from './storage';
+import { realtimeBroadcaster } from './realtime';
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -797,7 +798,32 @@ app.get('/api/messages/:username', async (req, res) => {
       .orderBy('created_at', 'asc')
       .limit(100);
 
-    res.json(messages);
+    res.json({ 
+      contact: { id: contact.id, username: contact.username, display_name: contact.display_name },
+      messages 
+    });
+
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.get('/api/realtime/stream', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const queryToken = req.query.token as string;
+  
+  if (!authHeader && !queryToken) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader ? authHeader.split(' ')[1]! : queryToken;
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.id;
+
+    const clientId = realtimeBroadcaster.addClient(userId, res);
+
+    req.on('close', () => {
+      realtimeBroadcaster.removeClient(clientId);
+    });
   } catch (err) {
     res.status(401).json({ error: 'Invalid token' });
   }

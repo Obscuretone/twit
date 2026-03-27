@@ -2,6 +2,7 @@
 
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 
 const API_URL = process.env.API_URL || 'http://backend:4000';
 
@@ -68,6 +69,11 @@ export async function logout() {
   const cookieStore = await cookies();
   cookieStore.delete('twit_session');
   redirect('/');
+}
+
+export async function getRealtimeToken() {
+  const cookieStore = await cookies();
+  return cookieStore.get('twit_session')?.value;
 }
 
 export async function getSession() {

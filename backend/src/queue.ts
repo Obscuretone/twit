@@ -16,6 +16,10 @@ export async function connectQueue() {
   console.log('Connected to RabbitMQ');
 }
 
+export function getChannel() {
+  return channel;
+}
+
 export async function sendToQueue(queue: string, message: any) {
   if (!channel) {
     console.error('Queue channel not initialized');

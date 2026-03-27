@@ -5,7 +5,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #000000;
     --foreground: #ededed;
   }
 }
@@ -46,4 +46,39 @@ a {
   html {
     color-scheme: dark;
   }
+}
+
+.badge {
+  background-color: #1d9bf0;
+  color: white;
+  border-radius: 999px;
+  padding: 1px 5px;
+  font-size: 11px;
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  font-weight: bold;
+  border: 1px solid black;
+}
+
+.linkWrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.refreshButton {
+  background-color: transparent;
+  color: #1d9bf0;
+  border: 1px solid #333639;
+  padding: 12px;
+  width: 100%;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.refreshButton:hover {
+  background-color: rgba(29, 155, 240, 0.1);
 }

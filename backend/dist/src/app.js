@@ -282,12 +282,32 @@ app.get('/api/search', async (req, res) => {
             return res.json(users);
         }
         else {
+            const { from, since, until, min_likes, min_retweets, has_media } = req.query;
             const query = (0, db_1.default)('tweets')
                 .join('users', 'tweets.user_id', 'users.id')
                 .whereRaw("to_tsvector('english', tweets.content) @@ plainto_tsquery('english', ?)", [q])
+                .whereNull('tweets.deleted_at')
                 .select('tweets.*', 'users.username', 'users.display_name')
                 .orderBy('tweets.created_at', 'desc')
                 .limit(50);
+            if (from) {
+                query.where('users.username', from);
+            }
+            if (since) {
+                query.where('tweets.created_at', '>=', since);
+            }
+            if (until) {
+                query.where('tweets.created_at', '<=', until);
+            }
+            if (min_likes) {
+                query.where('tweets.like_count', '>=', parseInt(min_likes));
+            }
+            if (min_retweets) {
+                query.where('tweets.retweet_count', '>=', parseInt(min_retweets));
+            }
+            if (has_media === 'true') {
+                query.whereNotNull('tweets.media_url');
+            }
             if (currentUserId) {
                 query.whereNotExists(db_1.default.select(1).from('blocks').whereRaw('blocker_id = ? AND blocked_id = tweets.user_id', [currentUserId]));
                 query.whereNotExists(db_1.default.select(1).from('blocks').whereRaw('blocker_id = tweets.user_id AND blocked_id = ?', [currentUserId]));

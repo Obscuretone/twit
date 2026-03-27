@@ -378,6 +378,13 @@
   padding-top: 32px;
 }
 
+.sidebarColumn {
+  width: 350px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .searchBox {
   position: sticky;
   top: 0;

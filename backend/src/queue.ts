@@ -13,6 +13,7 @@ export async function connectQueue() {
     await channel.assertQueue('engagement');
     await channel.assertQueue('hashtags');
     await channel.assertQueue('direct_messages');
+    await channel.assertQueue('analytics');
     console.log('Connected to RabbitMQ');
   } catch (err) {
     console.error('Failed to connect to RabbitMQ:', err);

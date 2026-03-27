@@ -47,6 +47,7 @@ export default async function TweetPage({ params }: { params: { id: string } }) 
           <div className={styles.tweetStats}>
             <span><strong>{tweet.retweet_count || 0}</strong> Retweets</span>
             <span><strong>{tweet.like_count || 0}</strong> Likes</span>
+            <span><strong>{tweet.view_count || 0}</strong> Views</span>
           </div>
         </div>
 

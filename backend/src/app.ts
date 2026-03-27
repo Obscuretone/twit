@@ -437,6 +437,9 @@ app.get('/api/tweets/:id', async (req, res) => {
     
     if (!tweet) return res.status(404).json({ error: 'Tweet not found' });
 
+    // Track view asynchronously
+    sendToQueue('analytics', { tweet_id: id });
+
     res.json({ tweet, replies });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });

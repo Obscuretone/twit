@@ -100,4 +100,14 @@ export async function startWorker() {
     console.log(`Delivering message ${message_id} from ${sender_id} to ${receiver_id}`);
     // Future: WebSocket push
   });
+
+  // 7. Analytics (View Counts)
+  consumeQueue('analytics', async (data) => {
+    const { tweet_id } = data;
+    try {
+      await db('tweets').where('id', tweet_id).increment('view_count', 1);
+    } catch (err) {
+      console.error(`Failed to update view count for tweet ${tweet_id}:`, err);
+    }
+  });
 }

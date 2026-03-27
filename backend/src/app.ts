@@ -8,6 +8,8 @@ import { sendToQueue } from './queue';
 import multer from 'multer';
 import { uploadFile } from './storage';
 import { realtimeBroadcaster } from './realtime';
+import { rateLimiter } from './middleware/rateLimiter';
+import { spamDetector } from './middleware/spamDetector';
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -61,13 +63,9 @@ app.use(cors());
 app.use(express.json());
 
 // TWEETS
-app.post('/api/tweets', upload.single('media'), async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
-
-  const token = authHeader.split(' ')[1]!;
+app.post('/api/tweets', authenticate, rateLimiter(60, 10, 'tweet'), spamDetector, upload.single('media'), async (req, res) => {
+  const user = (req as any).user;
   try {
-    const decoded: any = jwt.verify(token, JWT_SECRET);
     const { content, parent_tweet_id } = req.body;
     
     if (!content || content.length > 280) {
@@ -81,7 +79,7 @@ app.post('/api/tweets', upload.single('media'), async (req, res) => {
     }
 
     const [tweet] = await db('tweets').insert({
-      user_id: decoded.id,
+      user_id: user.id,
       content,
       parent_tweet_id: parent_tweet_id || null,
       media_url
@@ -93,14 +91,14 @@ app.post('/api/tweets', upload.single('media'), async (req, res) => {
     }
 
     // Fan-out to followers (send to queue for processing)
-    sendToQueue('feeds', { tweet_id: tweet.id, user_id: decoded.id, type: 'fan_out' });
+    sendToQueue('feeds', { tweet_id: tweet.id, user_id: user.id, type: 'fan_out' });
 
     // Parse mentions
     const mentions = content.match(/@(\w+)/g);
     if (mentions) {
       mentions.forEach((mention: string) => {
         const username = mention.substring(1);
-        sendToQueue('mentions', { tweet_id: tweet.id, username, mentioner: decoded.username });
+        sendToQueue('mentions', { tweet_id: tweet.id, username, mentioner: user.username });
       });
     }
 
@@ -974,7 +972,7 @@ app.get('/health', (req, res) => {
 });
 
 // SIGNUP
-app.post('/api/auth/signup', async (req, res) => {
+app.post('/api/auth/signup', rateLimiter(60, 5, 'auth'), async (req, res) => {
   const { username, email, password } = req.body;
   if (!username || !email || !password) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -1000,7 +998,7 @@ app.post('/api/auth/signup', async (req, res) => {
 });
 
 // LOGIN
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', rateLimiter(60, 5, 'auth'), async (req, res) => {
   const { identifier, password } = req.body; // identifier can be username or email
   if (!identifier || !password) {
     return res.status(400).json({ error: 'Missing credentials' });

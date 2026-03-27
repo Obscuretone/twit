@@ -1,6 +1,7 @@
 import styles from "../page.module.css";
 import { getUserProfile, followUser, unfollowUser } from "../../actions/follows";
 import { getSession } from "../../actions/auth";
+import { blockUser, muteUser } from "../../actions/relationships";
 
 export default async function Profile({ params }: { params: { username: string } }) {
   const { username } = await params;
@@ -21,6 +22,31 @@ export default async function Profile({ params }: { params: { username: string }
   const isSelf = currentUser && currentUser.username === username;
   const S3_URL = process.env.NEXT_PUBLIC_S3_PUBLIC_URL || "http://localhost:9000/twit-media";
 
+  if (profile.is_blocked && !isSelf) {
+    return (
+      <div className={styles.page}>
+        <header className={styles.header}>
+          <a href="/" className={styles.logo}>Twit</a>
+        </header>
+        <main className={styles.main}>
+          <div className={styles.profileHeader}>
+            <h1>@{profile.username}</h1>
+          </div>
+          <div className={styles.blockedMessage}>
+            <h2>You are blocked</h2>
+            <p>You cannot follow or see @{profile.username}'s tweets.</p>
+            <form action={async () => {
+              'use server';
+              await blockUser(username, true);
+            }}>
+              <button type="submit" className={styles.loginButton}>Unblock</button>
+            </form>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -40,16 +66,39 @@ export default async function Profile({ params }: { params: { username: string }
             <h1>{profile.display_name || profile.username}</h1>
             <p className={styles.username}>@{profile.username}</p>
           </div>
-          {!isSelf && currentUser && (
-            <form action={async () => {
-              'use server';
-              // In a real app we'd check if currently following
-              // For simplicity, we'll just have a follow button.
-              await followUser(username);
-            }}>
-              <button type="submit" className={styles.signupButton}>Follow</button>
-            </form>
-          )}
+          <div className={styles.profileActions}>
+            {!isSelf && currentUser && (
+              <>
+                <form action={async () => {
+                  'use server';
+                  if (profile.is_following) await unfollowUser(username);
+                  else await followUser(username);
+                }}>
+                  <button type="submit" className={profile.is_following ? styles.loginButton : styles.signupButton}>
+                    {profile.is_following ? 'Unfollow' : 'Follow'}
+                  </button>
+                </form>
+                
+                <form action={async () => {
+                  'use server';
+                  await muteUser(username, !!profile.is_muted);
+                }}>
+                  <button type="submit" className={styles.engagementButton}>
+                    {profile.is_muted ? 'Unmute' : 'Mute'}
+                  </button>
+                </form>
+
+                <form action={async () => {
+                  'use server';
+                  await blockUser(username, false);
+                }}>
+                  <button type="submit" className={styles.engagementButton} style={{ color: '#f4212e' }}>
+                    Block
+                  </button>
+                </form>
+              </>
+            )}
+          </div>
         </div>
         <div className={styles.stats}>
           <span><strong>{profile.following_count || 0}</strong> Following</span>

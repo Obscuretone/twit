@@ -75,25 +75,88 @@ app.post('/api/tweets', upload.single('media'), async (req, res) => {
   }
 });
 
+app.get('/api/tweets', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  let currentUserId: string | null = null;
+  if (authHeader) {
+    try {
+      const token = authHeader.split(' ')[1];
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      currentUserId = decoded.id;
+    } catch (err) {}
+  }
+
+  try {
+    const query = db('tweets')
+      .join('users', 'tweets.user_id', 'users.id')
+      .select('tweets.*', 'users.username', 'users.display_name')
+      .whereNull('tweets.parent_tweet_id')
+      .orderBy('tweets.created_at', 'desc')
+      .limit(100);
+
+    if (currentUserId) {
+      // Filter out blocks and mutes
+      query.whereNotExists(db.select(1).from('blocks').whereRaw('blocker_id = ? AND blocked_id = tweets.user_id', [currentUserId]));
+      query.whereNotExists(db.select(1).from('blocks').whereRaw('blocker_id = tweets.user_id AND blocked_id = ?', [currentUserId]));
+      query.whereNotExists(db.select(1).from('mutes').whereRaw('muter_id = ? AND muted_id = tweets.user_id', [currentUserId]));
+
+      query.select(
+        db.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [currentUserId]),
+        db.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [currentUserId])
+      );
+    }
+
+    const tweets = await query;
+    res.json(tweets);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // SEARCH
 app.get('/api/search', async (req, res) => {
-  const { q, type } = req.query; // type: 'tweets' or 'users'
+  const { q, type } = req.query;
+  const authHeader = req.headers.authorization;
+  let currentUserId: string | null = null;
+  if (authHeader) {
+    try {
+      const token = authHeader.split(' ')[1];
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      currentUserId = decoded.id;
+    } catch (err) {}
+  }
+
   if (!q) return res.json([]);
 
   try {
     if (type === 'users') {
-      const users = await db('users')
+      const query = db('users')
         .whereRaw("to_tsvector('english', username || ' ' || COALESCE(display_name, '')) @@ plainto_tsquery('english', ?)", [q])
         .select('id', 'username', 'display_name', 'bio', 'avatar_url')
         .limit(20);
+      
+      if (currentUserId) {
+        query.whereNotExists(db.select(1).from('blocks').whereRaw('blocker_id = ? AND blocked_id = users.id', [currentUserId]));
+        query.whereNotExists(db.select(1).from('blocks').whereRaw('blocker_id = users.id AND blocked_id = ?', [currentUserId]));
+      }
+
+      const users = await query;
       return res.json(users);
     } else {
-      const tweets = await db('tweets')
+      const query = db('tweets')
         .join('users', 'tweets.user_id', 'users.id')
         .whereRaw("to_tsvector('english', tweets.content) @@ plainto_tsquery('english', ?)", [q])
         .select('tweets.*', 'users.username', 'users.display_name')
         .orderBy('tweets.created_at', 'desc')
         .limit(50);
+
+      if (currentUserId) {
+        query.whereNotExists(db.select(1).from('blocks').whereRaw('blocker_id = ? AND blocked_id = tweets.user_id', [currentUserId]));
+        query.whereNotExists(db.select(1).from('blocks').whereRaw('blocker_id = tweets.user_id AND blocked_id = ?', [currentUserId]));
+        query.whereNotExists(db.select(1).from('mutes').whereRaw('muter_id = ? AND muted_id = tweets.user_id', [currentUserId]));
+      }
+
+      const tweets = await query;
       return res.json(tweets);
     }
   } catch (err) {
@@ -210,39 +273,6 @@ app.delete('/api/tweets/:id/retweet', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(401).json({ error: 'Invalid token' });
-  }
-});
-
-app.get('/api/tweets', async (req, res) => {
-  const authHeader = req.headers.authorization;
-  let currentUserId: string | null = null;
-  if (authHeader) {
-    try {
-      const token = authHeader.split(' ')[1];
-      const decoded: any = jwt.verify(token, JWT_SECRET);
-      currentUserId = decoded.id;
-    } catch (err) {}
-  }
-
-  try {
-    const query = db('tweets')
-      .join('users', 'tweets.user_id', 'users.id')
-      .select('tweets.*', 'users.username', 'users.display_name')
-      .whereNull('tweets.parent_tweet_id')
-      .orderBy('tweets.created_at', 'desc')
-      .limit(100);
-
-    if (currentUserId) {
-      query.select(
-        db.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [currentUserId]),
-        db.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [currentUserId])
-      );
-    }
-
-    const tweets = await query;
-    res.json(tweets);
-  } catch (err) {
-    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -396,15 +426,126 @@ app.delete('/api/follow/:username', async (req, res) => {
   }
 });
 
+// RELATIONSHIPS (Blocks & Mutes)
+app.post('/api/users/:username/block', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { username } = req.params;
+
+    const userToBlock = await db('users').where('username', username).first();
+    if (!userToBlock) return res.status(404).json({ error: 'User not found' });
+    if (userToBlock.id === decoded.id) return res.status(400).json({ error: 'Cannot block yourself' });
+
+    await db('blocks').insert({ blocker_id: decoded.id, blocked_id: userToBlock.id })
+      .onConflict(['blocker_id', 'blocked_id']).ignore();
+    
+    // Auto-unfollow both ways
+    await db('follows').where({ follower_id: decoded.id, following_id: userToBlock.id }).del();
+    await db('follows').where({ follower_id: userToBlock.id, following_id: decoded.id }).del();
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.delete('/api/users/:username/block', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { username } = req.params;
+    const userToUnblock = await db('users').where('username', username).first();
+    if (!userToUnblock) return res.status(404).json({ error: 'User not found' });
+
+    await db('blocks').where({ blocker_id: decoded.id, blocked_id: userToUnblock.id }).del();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.post('/api/users/:username/mute', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { username } = req.params;
+    const userToMute = await db('users').where('username', username).first();
+    if (!userToMute) return res.status(404).json({ error: 'User not found' });
+
+    await db('mutes').insert({ muter_id: decoded.id, muted_id: userToMute.id })
+      .onConflict(['muter_id', 'muted_id']).ignore();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.delete('/api/users/:username/mute', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { username } = req.params;
+    const userToUnmute = await db('users').where('username', username).first();
+    if (!userToUnmute) return res.status(404).json({ error: 'User not found' });
+
+    await db('mutes').where({ muter_id: decoded.id, muted_id: userToUnmute.id }).del();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
 app.get('/api/users/:username', async (req, res) => {
   const { username } = req.params;
+  const authHeader = req.headers.authorization;
+  let currentUserId: string | null = null;
+  if (authHeader) {
+    try {
+      const token = authHeader.split(' ')[1];
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      currentUserId = decoded.id;
+    } catch (err) {}
+  }
+
   try {
     const user = await db('users')
       .where('username', username)
-      .select('id', 'username', 'display_name', 'bio', 'created_at')
+      .select('id', 'username', 'display_name', 'bio', 'avatar_url', 'created_at')
       .first();
     if (!user) return res.status(404).json({ error: 'User not found' });
     
+    // Check if blocked by current user or blocking current user
+    if (currentUserId) {
+      const block = await db('blocks')
+        .where(function() {
+          this.where({ blocker_id: currentUserId, blocked_id: user.id })
+              .orWhere({ blocker_id: user.id, blocked_id: currentUserId });
+        }).first();
+      
+      if (block) {
+        return res.json({ ...user, is_blocked: true, followers_count: 0, following_count: 0 });
+      }
+
+      const mute = await db('mutes').where({ muter_id: currentUserId, muted_id: user.id }).first();
+      user.is_muted = !!mute;
+      
+      const follow = await db('follows').where({ follower_id: currentUserId, following_id: user.id }).first();
+      user.is_following = !!follow;
+    }
+
     const follows = await db('follows').where('following_id', user.id).count('follower_id as count').first();
     const following = await db('follows').where('follower_id', user.id).count('following_id as count').first();
     
@@ -426,6 +567,9 @@ app.get('/api/notifications', async (req, res) => {
       .join('users', 'notifications.from_user_id', 'users.id')
       .leftJoin('tweets', 'notifications.tweet_id', 'tweets.id')
       .where('notifications.user_id', decoded.id)
+      // Filter out notifications from blocked or muted users
+      .whereNotExists(db.select(1).from('blocks').whereRaw('blocker_id = ? AND blocked_id = notifications.from_user_id', [decoded.id]))
+      .whereNotExists(db.select(1).from('mutes').whereRaw('muter_id = ? AND muted_id = notifications.from_user_id', [decoded.id]))
       .select('notifications.*', 'users.username as from_username', 'tweets.content as tweet_content')
       .orderBy('notifications.created_at', 'desc')
       .limit(50);
@@ -447,6 +591,15 @@ app.post('/api/messages', async (req, res) => {
 
     const receiver = await db('users').where('username', receiver_username).first();
     if (!receiver) return res.status(404).json({ error: 'User not found' });
+
+    // Check for block
+    const block = await db('blocks')
+      .where(function() {
+        this.where({ blocker_id: decoded.id, blocked_id: receiver.id })
+            .orWhere({ blocker_id: receiver.id, blocked_id: decoded.id });
+      }).first();
+    
+    if (block) return res.status(403).json({ error: 'Cannot message this user' });
 
     const [message] = await db('messages').insert({
       sender_id: decoded.id,
@@ -484,12 +637,14 @@ app.get('/api/messages', async (req, res) => {
           content,
           created_at
         FROM messages
-        WHERE sender_id = ? OR receiver_id = ?
+        WHERE (sender_id = ? OR receiver_id = ?)
+        -- Filter out blocked users from conversation list
+        AND NOT EXISTS (SELECT 1 FROM blocks WHERE (blocker_id = ? AND blocked_id = (CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END)) OR (blocker_id = (CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END) AND blocked_id = ?))
         ORDER BY created_at DESC
       ) m
       JOIN users u ON u.id = m.contact_id
       ORDER BY contact_id, last_message_at DESC
-    `, [decoded.id, decoded.id, decoded.id]);
+    `, [decoded.id, decoded.id, decoded.id, decoded.id, decoded.id, decoded.id, decoded.id]);
 
     res.json(conversations.rows);
   } catch (err) {

@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # Primary Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: rootpassword
+      POSTGRES_DB: twit
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Caching
+  memcached:
+    image: memcached:alpine
+    ports:
+      - "11211:11211"
+
+  # Message Queue
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: root
+      RABBITMQ_DEFAULT_PASS: rootpassword
+
+  # Express Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      - DATABASE_URL=postgresql://root:rootpassword@postgres:5432/twit
+      - MEMCACHED_HOST=memcached:11211
+      - RABBITMQ_URL=amqp://root:rootpassword@rabbitmq:5672
+      - JWT_SECRET=supersecretkey_change_in_prod
+      - PORT=4000
+    depends_on:
+      - postgres
+      - memcached
+      - rabbitmq
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:4000
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

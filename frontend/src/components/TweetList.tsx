@@ -1,4 +1,5 @@
 import styles from "../app/page.module.css";
+import { likeTweet, retweetTweet } from "../actions/engagement";
 
 interface Tweet {
   id: string;
@@ -6,6 +7,12 @@ interface Tweet {
   username: string;
   display_name: string;
   created_at: string;
+  reply_count?: number;
+  retweet_count?: number;
+  like_count?: number;
+  has_liked?: boolean;
+  has_retweeted?: boolean;
+  media_url?: string;
 }
 
 export default function TweetList({ tweets }: { tweets: Tweet[] }) {
@@ -35,8 +42,24 @@ export default function TweetList({ tweets }: { tweets: Tweet[] }) {
           </a>
           <div className={styles.tweetEngagement}>
             <span className={styles.engagementItem}>💬 {tweet.reply_count || 0}</span>
-            <span className={styles.engagementItem}>🔁 {tweet.retweet_count || 0}</span>
-            <span className={styles.engagementItem}>❤️ {tweet.like_count || 0}</span>
+            
+            <form action={async () => {
+              'use server';
+              await retweetTweet(tweet.id, !!tweet.has_retweeted);
+            }}>
+              <button type="submit" className={`${styles.engagementButton} ${tweet.has_retweeted ? styles.retweeted : ''}`}>
+                🔁 {tweet.retweet_count || 0}
+              </button>
+            </form>
+
+            <form action={async () => {
+              'use server';
+              await likeTweet(tweet.id, !!tweet.has_liked);
+            }}>
+              <button type="submit" className={`${styles.engagementButton} ${tweet.has_liked ? styles.liked : ''}`}>
+                {tweet.has_liked ? '❤️' : '🤍'} {tweet.like_count || 0}
+              </button>
+            </form>
           </div>
         </div>
       ))}

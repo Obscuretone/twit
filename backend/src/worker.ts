@@ -61,4 +61,19 @@ export async function startWorker() {
       console.error('Failed to create notification:', err);
     }
   });
+
+  // 4. Engagement Counts (Async Update)
+  consumeQueue('engagement', async (data) => {
+    const { tweet_id, type, action } = data; // type: 'like', 'retweet', action: 'inc', 'dec'
+    console.log(`Updating ${type} count for tweet ${tweet_id}: ${action}`);
+    
+    const field = type === 'like' ? 'like_count' : 'retweet_count';
+    const amount = action === 'inc' ? 1 : -1;
+
+    try {
+      await db('tweets').where('id', tweet_id).increment(field, amount);
+    } catch (err) {
+      console.error(`Failed to update ${field} for tweet ${tweet_id}:`, err);
+    }
+  });
 }

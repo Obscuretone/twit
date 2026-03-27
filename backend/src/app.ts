@@ -67,14 +67,132 @@ app.post('/api/tweets', upload.single('media'), async (req, res) => {
   }
 });
 
-app.get('/api/tweets', async (req, res) => {
+// ENGAGEMENT (Likes & Retweets)
+app.post('/api/tweets/:id/like', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
   try {
-    const tweets = await db('tweets')
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { id } = req.params;
+
+    const tweet = await db('tweets').where('id', id).first();
+    if (!tweet) return res.status(404).json({ error: 'Tweet not found' });
+
+    await db('likes').insert({
+      user_id: decoded.id,
+      tweet_id: id
+    }).onConflict(['user_id', 'tweet_id']).ignore();
+
+    sendToQueue('engagement', { tweet_id: id, type: 'like', action: 'inc' });
+    
+    if (tweet.user_id !== decoded.id) {
+      sendToQueue('notifications', { user_id: tweet.user_id, from_user_id: decoded.id, tweet_id: id, type: 'like' });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.delete('/api/tweets/:id/like', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { id } = req.params;
+
+    const deleted = await db('likes').where({ user_id: decoded.id, tweet_id: id }).del();
+    if (deleted) {
+      sendToQueue('engagement', { tweet_id: id, type: 'like', action: 'dec' });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.post('/api/tweets/:id/retweet', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { id } = req.params;
+
+    const tweet = await db('tweets').where('id', id).first();
+    if (!tweet) return res.status(404).json({ error: 'Tweet not found' });
+
+    await db('retweets').insert({
+      user_id: decoded.id,
+      tweet_id: id
+    }).onConflict(['user_id', 'tweet_id']).ignore();
+
+    sendToQueue('engagement', { tweet_id: id, type: 'retweet', action: 'inc' });
+    
+    if (tweet.user_id !== decoded.id) {
+      sendToQueue('notifications', { user_id: tweet.user_id, from_user_id: decoded.id, tweet_id: id, type: 'retweet' });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.delete('/api/tweets/:id/retweet', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { id } = req.params;
+
+    const deleted = await db('retweets').where({ user_id: decoded.id, tweet_id: id }).del();
+    if (deleted) {
+      sendToQueue('engagement', { tweet_id: id, type: 'retweet', action: 'dec' });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.get('/api/tweets', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  let currentUserId: string | null = null;
+  if (authHeader) {
+    try {
+      const token = authHeader.split(' ')[1];
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      currentUserId = decoded.id;
+    } catch (err) {}
+  }
+
+  try {
+    const query = db('tweets')
       .join('users', 'tweets.user_id', 'users.id')
       .select('tweets.*', 'users.username', 'users.display_name')
-      .whereNull('tweets.parent_tweet_id') // Only show top-level tweets in main feed
+      .whereNull('tweets.parent_tweet_id')
       .orderBy('tweets.created_at', 'desc')
       .limit(100);
+
+    if (currentUserId) {
+      query.select(
+        db.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [currentUserId]),
+        db.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [currentUserId])
+      );
+    }
+
+    const tweets = await query;
     res.json(tweets);
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
@@ -84,20 +202,43 @@ app.get('/api/tweets', async (req, res) => {
 // THREADS (Get tweet and its replies)
 app.get('/api/tweets/:id', async (req, res) => {
   const { id } = req.params;
+  const authHeader = req.headers.authorization;
+  let currentUserId: string | null = null;
+  if (authHeader) {
+    try {
+      const token = authHeader.split(' ')[1];
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+      currentUserId = decoded.id;
+    } catch (err) {}
+  }
+
   try {
-    const tweet = await db('tweets')
+    const tweetQuery = db('tweets')
       .join('users', 'tweets.user_id', 'users.id')
       .where('tweets.id', id)
       .select('tweets.*', 'users.username', 'users.display_name')
       .first();
-    
-    if (!tweet) return res.status(404).json({ error: 'Tweet not found' });
 
-    const replies = await db('tweets')
+    const repliesQuery = db('tweets')
       .join('users', 'tweets.user_id', 'users.id')
       .where('tweets.parent_tweet_id', id)
       .select('tweets.*', 'users.username', 'users.display_name')
       .orderBy('tweets.created_at', 'asc');
+
+    if (currentUserId) {
+      tweetQuery.select(
+        db.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [currentUserId]),
+        db.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [currentUserId])
+      );
+      repliesQuery.select(
+        db.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [currentUserId]),
+        db.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [currentUserId])
+      );
+    }
+
+    const [tweet, replies] = await Promise.all([tweetQuery, repliesQuery]);
+    
+    if (!tweet) return res.status(404).json({ error: 'Tweet not found' });
 
     res.json({ tweet, replies });
   } catch (err) {
@@ -113,36 +254,40 @@ app.get('/api/feed', async (req, res) => {
   const token = authHeader.split(' ')[1];
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
-    const cacheKey = `feed_${decoded.id}`;
+    const currentUserId = decoded.id;
+    const cacheKey = `feed_${currentUserId}`;
     
-    // 1. Try to get tweet IDs from Memcached
     const cachedFeed = await cache.get(cacheKey);
     let tweetIds: string[] = [];
-    
     if (cachedFeed && cachedFeed.value) {
       tweetIds = JSON.parse(cachedFeed.value.toString());
     }
 
     if (tweetIds.length > 0) {
-      // 2. Fetch full tweets for these IDs from DB
       const tweets = await db('tweets')
         .join('users', 'tweets.user_id', 'users.id')
         .whereIn('tweets.id', tweetIds)
         .select('tweets.*', 'users.username', 'users.display_name')
+        .select(
+          db.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [currentUserId]),
+          db.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [currentUserId])
+        )
         .orderBy('tweets.created_at', 'desc');
       return res.json(tweets);
     }
 
-    // 3. Cache miss: Fallback to DB query
     const tweets = await db('tweets')
       .join('users', 'tweets.user_id', 'users.id')
       .join('follows', 'tweets.user_id', 'follows.following_id')
-      .where('follows.follower_id', decoded.id)
+      .where('follows.follower_id', currentUserId)
       .select('tweets.*', 'users.username', 'users.display_name')
+      .select(
+        db.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [currentUserId]),
+        db.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [currentUserId])
+      )
       .orderBy('tweets.created_at', 'desc')
       .limit(100);
 
-    // 4. Optionally populate cache in background
     if (tweets.length > 0) {
       const idsToCache = tweets.map((t: any) => t.id);
       cache.set(cacheKey, JSON.stringify(idsToCache), { expires: 86400 });

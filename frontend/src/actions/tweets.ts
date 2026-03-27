@@ -36,3 +36,21 @@ export async function getTweets() {
     return [];
   }
 }
+
+export async function getFeed() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get('twit_session')?.value;
+  if (!token) return [];
+
+  try {
+    const response = await fetch(`${API_URL}/api/feed`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store'
+    });
+    if (!response.ok) return [];
+    return response.json();
+  } catch (err) {
+    console.error('Failed to fetch feed:', err);
+    return [];
+  }
+}

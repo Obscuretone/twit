@@ -562,6 +562,31 @@
   color: #71767b;
 }
 
+.profileActions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.blockedMessage {
+  padding: 40px;
+  text-align: center;
+  background: var(--gray-alpha-10);
+  border-radius: 16px;
+  margin-top: 24px;
+}
+
+.blockedMessage h2 {
+  font-size: 24px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.blockedMessage p {
+  color: #71767b;
+  margin-bottom: 24px;
+}
+
 .footer {
   grid-row-start: 3;
   display: flex;

@@ -13,6 +13,8 @@ const queue_1 = require("./queue");
 const multer_1 = __importDefault(require("multer"));
 const storage_1 = require("./storage");
 const realtime_1 = require("./realtime");
+const rateLimiter_1 = require("./middleware/rateLimiter");
+const spamDetector_1 = require("./middleware/spamDetector");
 const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
 const app = (0, express_1.default)();
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey_change_in_prod';
@@ -60,13 +62,9 @@ const authenticate = async (req, res, next) => {
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
 // TWEETS
-app.post('/api/tweets', upload.single('media'), async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.post('/api/tweets', authenticate, (0, rateLimiter_1.rateLimiter)(60, 10, 'tweet'), spamDetector_1.spamDetector, upload.single('media'), async (req, res) => {
+    const user = req.user;
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
         const { content, parent_tweet_id } = req.body;
         if (!content || content.length > 280) {
             return res.status(400).json({ error: 'Invalid content' });
@@ -77,7 +75,7 @@ app.post('/api/tweets', upload.single('media'), async (req, res) => {
             media_url = key;
         }
         const [tweet] = await (0, db_1.default)('tweets').insert({
-            user_id: decoded.id,
+            user_id: user.id,
             content,
             parent_tweet_id: parent_tweet_id || null,
             media_url
@@ -87,13 +85,13 @@ app.post('/api/tweets', upload.single('media'), async (req, res) => {
             await (0, db_1.default)('tweets').where('id', parent_tweet_id).increment('reply_count', 1);
         }
         // Fan-out to followers (send to queue for processing)
-        (0, queue_1.sendToQueue)('feeds', { tweet_id: tweet.id, user_id: decoded.id, type: 'fan_out' });
+        (0, queue_1.sendToQueue)('feeds', { tweet_id: tweet.id, user_id: user.id, type: 'fan_out' });
         // Parse mentions
         const mentions = content.match(/@(\w+)/g);
         if (mentions) {
             mentions.forEach((mention) => {
                 const username = mention.substring(1);
-                (0, queue_1.sendToQueue)('mentions', { tweet_id: tweet.id, username, mentioner: decoded.username });
+                (0, queue_1.sendToQueue)('mentions', { tweet_id: tweet.id, username, mentioner: user.username });
             });
         }
         // Parse hashtags
@@ -885,7 +883,7 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', service: 'backend' });
 });
 // SIGNUP
-app.post('/api/auth/signup', async (req, res) => {
+app.post('/api/auth/signup', (0, rateLimiter_1.rateLimiter)(60, 5, 'auth'), async (req, res) => {
     const { username, email, password } = req.body;
     if (!username || !email || !password) {
         return res.status(400).json({ error: 'Missing required fields' });
@@ -909,7 +907,7 @@ app.post('/api/auth/signup', async (req, res) => {
     }
 });
 // LOGIN
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', (0, rateLimiter_1.rateLimiter)(60, 5, 'auth'), async (req, res) => {
     const { identifier, password } = req.body; // identifier can be username or email
     if (!identifier || !password) {
         return res.status(400).json({ error: 'Missing credentials' });

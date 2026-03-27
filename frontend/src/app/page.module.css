@@ -216,6 +216,36 @@
   color: #71767b;
 }
 
+.profileHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.profileInfo h1 {
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.stats {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 16px;
+  font-size: 15px;
+  color: #71767b;
+}
+
+.stats strong {
+  color: var(--foreground);
+}
+
+.bio {
+  font-size: 16px;
+  line-height: 1.4;
+  margin-bottom: 24px;
+}
+
 .footer {
   grid-row-start: 3;
   display: flex;

@@ -1,11 +1,26 @@
 # Twitter Clone Project Context
 
-## Engineering Standards
-- **Testing:** ALWAYS include unit tests for new features. Use Jest for both frontend and backend.
-- **Hygiene:** Ensure every module has a `README.md`. Maintain clean code, proper typing, and linting.
-- **Privacy:** NO external dependencies (CDNs, fonts, etc.). Bundle everything locally.
-- **Scalability:** Use UUIDs for all primary keys. Use caching (Memcached) and queues (RabbitMQ) for all heavy/frequent operations.
-- **Compatibility:** Ensure the frontend works fully with JavaScript disabled (using Server Actions).
+## Architecture & Constraints
+- **Goal:** Massively scalable Twitter clone.
+- **Frontend:** Next.js (App Router). Strict No-JS support using Server Components and Server Actions.
+- **Backend:** Node.js (Express) + TypeScript.
+- **Infrastructure:** Dockerized (PostgreSQL, Memcached, RabbitMQ, MinIO).
+- **Storage:** S3-compatible media storage (MinIO in dev).
+- **Caching:** Memcached for profiles and fan-out feeds.
+- **Queues:** RabbitMQ for asynchronous tasks (Mentions, Hashtags, Fan-out, Notifications, Engagement, Analytics, DMs).
+
+## Features
+- User Auth & JWT Sessions.
+- Tweeting with @mentions, #hashtags, and Image Uploads.
+- Personalized Feed (Fan-out strategy).
+- Following, Blocking, and Muting (with server-side filtering).
+- Likes, Retweets, and Threaded Replies.
+- Private Direct Messaging.
+- Notifications Center.
+- Full-text Search (Tweets & Users).
+- Trending Topics.
+- Bookmarks & Custom Lists.
+- Tweet View Analytics.
 
 
 ## Agent Workflow

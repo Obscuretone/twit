@@ -63,6 +63,8 @@ export default function TweetList({ tweets }: { tweets: Tweet[] }) {
               </button>
             </form>
 
+            <span className={styles.engagementItem} title="Views">📊 {tweet.view_count || 0}</span>
+
             <form action={async () => {
               'use server';
               await toggleBookmark(tweet.id, !!tweet.has_bookmarked);

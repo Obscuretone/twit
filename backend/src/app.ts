@@ -60,10 +60,57 @@ app.post('/api/tweets', upload.single('media'), async (req, res) => {
       });
     }
 
+    // Parse hashtags
+    const hashtags = content.match(/#(\w+)/g);
+    if (hashtags) {
+      hashtags.forEach((tag: string) => {
+        sendToQueue('hashtags', { tag: tag.substring(1).toLowerCase() });
+      });
+    }
+
     res.status(201).json(tweet);
   } catch (err) {
     console.error('Failed to create tweet:', err);
     res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+// SEARCH
+app.get('/api/search', async (req, res) => {
+  const { q, type } = req.query; // type: 'tweets' or 'users'
+  if (!q) return res.json([]);
+
+  try {
+    if (type === 'users') {
+      const users = await db('users')
+        .whereRaw("to_tsvector('english', username || ' ' || COALESCE(display_name, '')) @@ plainto_tsquery('english', ?)", [q])
+        .select('id', 'username', 'display_name', 'bio', 'avatar_url')
+        .limit(20);
+      return res.json(users);
+    } else {
+      const tweets = await db('tweets')
+        .join('users', 'tweets.user_id', 'users.id')
+        .whereRaw("to_tsvector('english', tweets.content) @@ plainto_tsquery('english', ?)", [q])
+        .select('tweets.*', 'users.username', 'users.display_name')
+        .orderBy('tweets.created_at', 'desc')
+        .limit(50);
+      return res.json(tweets);
+    }
+  } catch (err) {
+    console.error('Search failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// TRENDING
+app.get('/api/trending', async (req, res) => {
+  try {
+    const trending = await db('hashtags')
+      .orderBy('tweet_count', 'desc')
+      .limit(10);
+    res.json(trending);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

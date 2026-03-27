@@ -1,6 +1,7 @@
 import { consumeQueue, sendToQueue } from './queue';
 import db from './db';
 import cache from './cache';
+import { realtimeBroadcaster } from './realtime';
 
 export async function startWorker() {
   console.log('Starting background workers...');
@@ -40,6 +41,9 @@ export async function startWorker() {
         feed.unshift(tweet_id);
         feed = feed.slice(0, 100);
         await cache.set(cacheKey, JSON.stringify(feed), { expires: 86400 });
+
+        // Notify user about new feed item
+        realtimeBroadcaster.publishEvent(follower.follower_id, 'feed_update', { tweet_id });
       }
     }
   });
@@ -56,7 +60,12 @@ export async function startWorker() {
         type,
         read: false
       });
-      // In the future, we could trigger a WebSocket/SSE push here for real-time users.
+      // Trigger a real-time push for notifications
+      realtimeBroadcaster.publishEvent(user_id, 'notification', { 
+        type, 
+        from_user_id, 
+        tweet_id 
+      });
     } catch (err) {
       console.error('Failed to create notification:', err);
     }
@@ -94,11 +103,16 @@ export async function startWorker() {
     }
   });
 
-  // 6. Direct Messages
   consumeQueue('direct_messages', async (data) => {
     const { message_id, sender_id, receiver_id } = data;
     console.log(`Delivering message ${message_id} from ${sender_id} to ${receiver_id}`);
-    // Future: WebSocket push
+    
+    // Get message details
+    const message = await db('messages').where('id', message_id).first();
+    if (message) {
+      realtimeBroadcaster.publishEvent(receiver_id, 'dm', message);
+      realtimeBroadcaster.publishEvent(sender_id, 'dm', message);
+    }
   });
 
   // 7. Analytics (View Counts)

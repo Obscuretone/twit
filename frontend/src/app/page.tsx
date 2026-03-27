@@ -4,6 +4,8 @@ import { getTweets, getFeed } from "../actions/tweets";
 import TweetForm from "../components/TweetForm";
 import TweetList from "../components/TweetList";
 import Sidebar from "../components/Sidebar";
+import NotificationBadge from "../components/NotificationBadge";
+import FeedRefreshButton from "../components/FeedRefreshButton";
 
 export default async function Home() {
   const user = await getSession();
@@ -15,7 +17,10 @@ export default async function Home() {
         <div className={styles.logo}>Twit</div>
         {user && (
           <div className={styles.userInfo}>
-            <a href="/notifications" className={styles.link}>Notifications</a>
+            <div className="linkWrapper">
+              <a href="/notifications" className={styles.link}>Notifications</a>
+              <NotificationBadge />
+            </div>
             <a href="/messages" className={styles.link}>Messages</a>
             <a href="/bookmarks" className={styles.link}>Bookmarks</a>
             <a href="/lists" className={styles.link}>Lists</a>
@@ -32,6 +37,7 @@ export default async function Home() {
           {user ? (
             <>
               <TweetForm />
+              <FeedRefreshButton />
               <TweetList tweets={tweets} />
             </>
           ) : (

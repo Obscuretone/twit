@@ -29,6 +29,19 @@ services:
       RABBITMQ_DEFAULT_USER: root
       RABBITMQ_DEFAULT_PASS: rootpassword
 
+  # S3 Compatible Storage (MinIO)
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: root
+      MINIO_ROOT_PASSWORD: rootpassword
+    volumes:
+      - minio_data:/data
+
   # Express Backend
   backend:
     build:
@@ -40,12 +53,17 @@ services:
       - DATABASE_URL=postgresql://root:rootpassword@postgres:5432/twit
       - MEMCACHED_HOST=memcached:11211
       - RABBITMQ_URL=amqp://root:rootpassword@rabbitmq:5672
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY=root
+      - S3_SECRET_KEY=rootpassword
+      - S3_BUCKET=twit-media
       - JWT_SECRET=supersecretkey_change_in_prod
       - PORT=4000
     depends_on:
       - postgres
       - memcached
       - rabbitmq
+      - minio
 
   # Next.js Frontend
   frontend:
@@ -57,8 +75,11 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:4000
       - API_URL=http://backend:4000
+      - NEXT_PUBLIC_S3_PUBLIC_URL=http://localhost:9000/twit-media
     depends_on:
       - backend
+      - minio
 
 volumes:
   postgres_data:
+  minio_data:

@@ -4,6 +4,11 @@ import db from '../db';
 import * as queue from '../queue';
 import jwt from 'jsonwebtoken';
 
+jest.mock('../storage', () => ({
+  uploadFile: jest.fn().mockResolvedValue('uploads/test-media.jpg'),
+  initS3: jest.fn().mockResolvedValue(true),
+}));
+
 jest.mock('../db', () => {
   const mKnex = {
     insert: jest.fn().mockReturnThis(),
@@ -13,6 +18,10 @@ jest.mock('../db', () => {
     orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue([{ id: 'tweet-uuid-123', content: 'hello @testuser', username: 'testuser' }]),
     where: jest.fn().mockReturnThis(),
+    whereIn: jest.fn().mockReturnThis(),
+    whereNull: jest.fn().mockReturnThis(),
+    leftJoin: jest.fn().mockReturnThis(),
+    increment: jest.fn().mockResolvedValue(1),
     first: jest.fn().mockResolvedValue({ id: 'user-uuid-123', username: 'testuser' }),
   };
   return jest.fn(() => mKnex);

@@ -5,6 +5,10 @@ import jwt from 'jsonwebtoken';
 import db from './db';
 import cache from './cache';
 import { sendToQueue } from './queue';
+import multer from 'multer';
+import { uploadFile } from './storage';
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const app = express();
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey_change_in_prod';
@@ -13,22 +17,36 @@ app.use(cors());
 app.use(express.json());
 
 // TWEETS
-app.post('/api/tweets', async (req, res) => {
+app.post('/api/tweets', upload.single('media'), async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
   const token = authHeader.split(' ')[1];
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
-    const { content } = req.body;
+    const { content, parent_tweet_id } = req.body;
+    
     if (!content || content.length > 280) {
       return res.status(400).json({ error: 'Invalid content' });
     }
 
+    let media_url = null;
+    if (req.file) {
+      const key = await uploadFile(req.file);
+      media_url = key;
+    }
+
     const [tweet] = await db('tweets').insert({
       user_id: decoded.id,
-      content
+      content,
+      parent_tweet_id: parent_tweet_id || null,
+      media_url
     }).returning('*');
+
+    // If it's a reply, increment parent's reply count
+    if (parent_tweet_id) {
+      await db('tweets').where('id', parent_tweet_id).increment('reply_count', 1);
+    }
 
     // Fan-out to followers (send to queue for processing)
     sendToQueue('feeds', { tweet_id: tweet.id, user_id: decoded.id, type: 'fan_out' });
@@ -44,6 +62,7 @@ app.post('/api/tweets', async (req, res) => {
 
     res.status(201).json(tweet);
   } catch (err) {
+    console.error('Failed to create tweet:', err);
     res.status(401).json({ error: 'Invalid token' });
   }
 });
@@ -53,9 +72,34 @@ app.get('/api/tweets', async (req, res) => {
     const tweets = await db('tweets')
       .join('users', 'tweets.user_id', 'users.id')
       .select('tweets.*', 'users.username', 'users.display_name')
+      .whereNull('tweets.parent_tweet_id') // Only show top-level tweets in main feed
       .orderBy('tweets.created_at', 'desc')
       .limit(100);
     res.json(tweets);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// THREADS (Get tweet and its replies)
+app.get('/api/tweets/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const tweet = await db('tweets')
+      .join('users', 'tweets.user_id', 'users.id')
+      .where('tweets.id', id)
+      .select('tweets.*', 'users.username', 'users.display_name')
+      .first();
+    
+    if (!tweet) return res.status(404).json({ error: 'Tweet not found' });
+
+    const replies = await db('tweets')
+      .join('users', 'tweets.user_id', 'users.id')
+      .where('tweets.parent_tweet_id', id)
+      .select('tweets.*', 'users.username', 'users.display_name')
+      .orderBy('tweets.created_at', 'asc');
+
+    res.json({ tweet, replies });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   }

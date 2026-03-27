@@ -6,23 +6,37 @@ import { revalidatePath } from 'next/cache';
 const API_URL = process.env.API_URL || 'http://backend:4000';
 
 export async function postTweet(formData: FormData) {
-  const content = formData.get('content');
   const cookieStore = await cookies();
   const token = cookieStore.get('twit_session')?.value;
 
-  if (!token || !content) return;
+  if (!token) return;
 
   const response = await fetch(`${API_URL}/api/tweets`, {
     method: 'POST',
     headers: { 
-      'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
+      // Note: Don't set Content-Type, let the browser set it for FormData
     },
-    body: JSON.stringify({ content }),
+    body: formData,
   });
 
   if (response.ok) {
+    const tweet = await response.json();
     revalidatePath('/');
+    if (tweet.parent_tweet_id) {
+      revalidatePath(`/tweet/${tweet.parent_tweet_id}`);
+    }
+  }
+}
+
+export async function getTweetThread(id: string) {
+  try {
+    const response = await fetch(`${API_URL}/api/tweets/${id}`, { cache: 'no-store' });
+    if (!response.ok) return null;
+    return response.json();
+  } catch (err) {
+    console.error('Failed to fetch tweet thread:', err);
+    return null;
   }
 }
 

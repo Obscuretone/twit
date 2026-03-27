@@ -435,6 +435,95 @@ app.get('/api/notifications', async (req, res) => {
   }
 });
 
+// DIRECT MESSAGES
+app.post('/api/messages', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { receiver_username, content } = req.body;
+
+    const receiver = await db('users').where('username', receiver_username).first();
+    if (!receiver) return res.status(404).json({ error: 'User not found' });
+
+    const [message] = await db('messages').insert({
+      sender_id: decoded.id,
+      receiver_id: receiver.id,
+      content
+    }).returning('*');
+
+    sendToQueue('direct_messages', { message_id: message.id, sender_id: decoded.id, receiver_id: receiver.id });
+
+    res.status(201).json(message);
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.get('/api/messages', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    
+    // Get unique conversations (users the current user has messaged or received messages from)
+    const conversations = await db.raw(`
+      SELECT DISTINCT ON (contact_id)
+        u.id as contact_id,
+        u.username,
+        u.display_name,
+        m.content as last_message,
+        m.created_at as last_message_at
+      FROM (
+        SELECT 
+          CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END as contact_id,
+          content,
+          created_at
+        FROM messages
+        WHERE sender_id = ? OR receiver_id = ?
+        ORDER BY created_at DESC
+      ) m
+      JOIN users u ON u.id = m.contact_id
+      ORDER BY contact_id, last_message_at DESC
+    `, [decoded.id, decoded.id, decoded.id]);
+
+    res.json(conversations.rows);
+  } catch (err) {
+    console.error('Failed to get conversations:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/messages/:username', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { username } = req.params;
+
+    const contact = await db('users').where('username', username).first();
+    if (!contact) return res.status(404).json({ error: 'User not found' });
+
+    const messages = await db('messages')
+      .where(function() {
+        this.where({ sender_id: decoded.id, receiver_id: contact.id })
+            .orWhere({ sender_id: contact.id, receiver_id: decoded.id });
+      })
+      .orderBy('created_at', 'asc')
+      .limit(100);
+
+    res.json(messages);
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'backend' });
 });

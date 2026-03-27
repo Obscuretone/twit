@@ -93,4 +93,11 @@ export async function startWorker() {
       console.error(`Failed to update hashtag #${tag}:`, err);
     }
   });
+
+  // 6. Direct Messages
+  consumeQueue('direct_messages', async (data) => {
+    const { message_id, sender_id, receiver_id } = data;
+    console.log(`Delivering message ${message_id} from ${sender_id} to ${receiver_id}`);
+    // Future: WebSocket push
+  });
 }

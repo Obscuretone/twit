@@ -30,6 +30,9 @@ app.post('/api/tweets', async (req, res) => {
       content
     }).returning('*');
 
+    // Fan-out to followers (send to queue for processing)
+    sendToQueue('feeds', { tweet_id: tweet.id, user_id: decoded.id, type: 'fan_out' });
+
     // Parse mentions
     const mentions = content.match(/@(\w+)/g);
     if (mentions) {
@@ -53,6 +56,71 @@ app.get('/api/tweets', async (req, res) => {
       .orderBy('tweets.created_at', 'desc')
       .limit(100);
     res.json(tweets);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// FOLLOWS
+app.post('/api/follow/:username', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { username } = req.params;
+    
+    const userToFollow = await db('users').where('username', username).first();
+    if (!userToFollow) return res.status(404).json({ error: 'User not found' });
+    if (userToFollow.id === decoded.id) return res.status(400).json({ error: 'Cannot follow yourself' });
+
+    await db('follows').insert({
+      follower_id: decoded.id,
+      following_id: userToFollow.id
+    }).onConflict(['follower_id', 'following_id']).ignore();
+
+    res.status(200).json({ success: true });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.delete('/api/follow/:username', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { username } = req.params;
+
+    const userToUnfollow = await db('users').where('username', username).first();
+    if (!userToUnfollow) return res.status(404).json({ error: 'User not found' });
+
+    await db('follows')
+      .where({ follower_id: decoded.id, following_id: userToUnfollow.id })
+      .del();
+
+    res.status(200).json({ success: true });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.get('/api/users/:username', async (req, res) => {
+  const { username } = req.params;
+  try {
+    const user = await db('users')
+      .where('username', username)
+      .select('id', 'username', 'display_name', 'bio', 'created_at')
+      .first();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    
+    const follows = await db('follows').where('following_id', user.id).count('follower_id as count').first();
+    const following = await db('follows').where('follower_id', user.id).count('following_id as count').first();
+    
+    res.json({ ...user, followers_count: follows?.count, following_count: following?.count });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   }

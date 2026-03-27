@@ -2,10 +2,11 @@ import styles from "../page.module.css";
 import { search } from "../../actions/search";
 import TweetList from "../../components/TweetList";
 import Sidebar from "../../components/Sidebar";
+import SearchFilters from "../../components/SearchFilters";
 
-export default async function SearchPage({ searchParams }: { searchParams: { q?: string, type?: string } }) {
-  const { q, type } = await searchParams;
-  const results = q ? await search(q, (type as any) || 'tweets') : [];
+export default async function SearchPage({ searchParams }: { searchParams: { q?: string, type?: string, from?: string, since?: string, until?: string, min_likes?: string, has_media?: string } }) {
+  const { q, type, ...filters } = await searchParams;
+  const results = q ? await search(q, (type as any) || 'tweets', filters) : [];
 
   return (
     <div className={styles.page}>
@@ -42,7 +43,10 @@ export default async function SearchPage({ searchParams }: { searchParams: { q?:
             <TweetList tweets={results} />
           )}
         </main>
-        <Sidebar />
+        <div className={styles.sidebarColumn}>
+          <Sidebar />
+          {q && type !== 'users' && <SearchFilters query={q} currentFilters={filters} />}
+        </div>
       </div>
     </div>
   );

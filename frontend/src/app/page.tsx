@@ -3,6 +3,7 @@ import { getSession, logout } from "../actions/auth";
 import { getTweets, getFeed } from "../actions/tweets";
 import TweetForm from "../components/TweetForm";
 import TweetList from "../components/TweetList";
+import Sidebar from "../components/Sidebar";
 
 export default async function Home() {
   const user = await getSession();
@@ -23,32 +24,35 @@ export default async function Home() {
         )}
       </header>
 
-      <main className={styles.main}>
-        {user ? (
-          <>
-            <TweetForm />
-            <TweetList tweets={tweets} />
-          </>
-        ) : (
-          <div className={styles.hero}>
-            <div className={styles.twitHeader}>
-              <h1>Welcome to Twit</h1>
-              <p>The massively scalable, privacy-focused microblogging platform.</p>
-            </div>
+      <div className={styles.layout}>
+        <main className={styles.main}>
+          {user ? (
+            <>
+              <TweetForm />
+              <TweetList tweets={tweets} />
+            </>
+          ) : (
+            <div className={styles.hero}>
+              <div className={styles.twitHeader}>
+                <h1>Welcome to Twit</h1>
+                <p>The massively scalable, privacy-focused microblogging platform.</p>
+              </div>
 
-            <div className={styles.authBox}>
-              <div className={styles.action}>
-                <h2>Join Twit today.</h2>
-                <a href="/signup" className={styles.signupButton}>Create Account</a>
-              </div>
-              <div className={styles.action}>
-                <h3>Already have an account?</h3>
-                <a href="/login" className={styles.loginButton}>Sign In</a>
+              <div className={styles.authBox}>
+                <div className={styles.action}>
+                  <h2>Join Twit today.</h2>
+                  <a href="/signup" className={styles.signupButton}>Create Account</a>
+                </div>
+                <div className={styles.action}>
+                  <h3>Already have an account?</h3>
+                  <a href="/login" className={styles.loginButton}>Sign In</a>
+                </div>
               </div>
             </div>
-          </div>
-        )}
-      </main>
+          )}
+        </main>
+        <Sidebar />
+      </div>
 
       <footer className={styles.footer}>
         <p>&copy; 2026 Twit. Dark Web Friendly.</p>

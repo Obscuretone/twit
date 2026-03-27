@@ -76,4 +76,21 @@ export async function startWorker() {
       console.error(`Failed to update ${field} for tweet ${tweet_id}:`, err);
     }
   });
+
+  // 5. Hashtag Tracking
+  consumeQueue('hashtags', async (data) => {
+    const { tag } = data;
+    console.log(`Updating hashtag count for: #${tag}`);
+    try {
+      await db('hashtags')
+        .insert({ tag, tweet_count: 1, last_used_at: db.fn.now() })
+        .onConflict('tag')
+        .merge({
+          tweet_count: db.raw('hashtags.tweet_count + 1'),
+          last_used_at: db.fn.now()
+        });
+    } catch (err) {
+      console.error(`Failed to update hashtag #${tag}:`, err);
+    }
+  });
 }

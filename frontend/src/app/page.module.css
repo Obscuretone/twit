@@ -361,6 +361,98 @@
   margin-bottom: 16px;
 }
 
+.layout {
+  display: flex;
+  gap: 32px;
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+.sidebar {
+  width: 350px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 32px;
+}
+
+.searchBox {
+  position: sticky;
+  top: 0;
+  padding: 12px 0;
+  background: var(--background);
+}
+
+.searchInput {
+  width: 100%;
+  padding: 12px 20px;
+  border-radius: 9999px;
+  border: 1px solid var(--gray-alpha-10);
+  background: var(--gray-alpha-10);
+  color: inherit;
+  font-size: 15px;
+}
+
+.trendingCard {
+  background: var(--gray-alpha-10);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.trendingCard h2 {
+  font-size: 20px;
+  font-weight: 800;
+  margin-bottom: 16px;
+}
+
+.trendItem {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.trendName {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.trendCount {
+  font-size: 13px;
+  color: #71767b;
+}
+
+.searchHeader {
+  border-bottom: 1px solid var(--gray-alpha-20);
+  margin-bottom: 16px;
+}
+
+.tabs {
+  display: flex;
+  margin-top: 16px;
+}
+
+.tabs a {
+  flex: 1;
+  text-align: center;
+  padding: 16px;
+  font-weight: 700;
+  color: #71767b;
+}
+
+.activeTab {
+  color: var(--foreground) !important;
+  border-bottom: 4px solid var(--button-primary-background);
+}
+
+.userCard {
+  padding: 16px;
+  border-bottom: 1px solid var(--gray-alpha-10);
+}
+
 .footer {
   grid-row-start: 3;
   display: flex;

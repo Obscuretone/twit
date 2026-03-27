@@ -1,5 +1,6 @@
 import styles from "../app/page.module.css";
 import { likeTweet, retweetTweet } from "../actions/engagement";
+import { toggleBookmark } from "../actions/bookmarks";
 
 interface Tweet {
   id: string;
@@ -12,6 +13,7 @@ interface Tweet {
   like_count?: number;
   has_liked?: boolean;
   has_retweeted?: boolean;
+  has_bookmarked?: boolean;
   media_url?: string;
 }
 
@@ -58,6 +60,15 @@ export default function TweetList({ tweets }: { tweets: Tweet[] }) {
             }}>
               <button type="submit" className={`${styles.engagementButton} ${tweet.has_liked ? styles.liked : ''}`}>
                 {tweet.has_liked ? '❤️' : '🤍'} {tweet.like_count || 0}
+              </button>
+            </form>
+
+            <form action={async () => {
+              'use server';
+              await toggleBookmark(tweet.id, !!tweet.has_bookmarked);
+            }}>
+              <button type="submit" className={`${styles.engagementButton} ${tweet.has_bookmarked ? styles.bookmarked : ''}`}>
+                {tweet.has_bookmarked ? '🔖' : '📖'}
               </button>
             </form>
           </div>

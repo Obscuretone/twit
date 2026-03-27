@@ -587,6 +587,33 @@
   margin-bottom: 24px;
 }
 
+.createListBox {
+  background: var(--gray-alpha-10);
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 32px;
+}
+
+.createListBox h2 {
+  font-size: 20px;
+  font-weight: 800;
+  margin-bottom: 16px;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  margin: 12px 0;
+}
+
+.listContainer h2 {
+  font-size: 20px;
+  font-weight: 800;
+  margin-bottom: 16px;
+}
+
 .footer {
   grid-row-start: 3;
   display: flex;

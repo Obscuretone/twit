@@ -75,6 +75,125 @@ app.post('/api/tweets', upload.single('media'), async (req, res) => {
   }
 });
 
+// BOOKMARKS
+app.post('/api/tweets/:id/bookmark', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { id } = req.params;
+    await db('bookmarks').insert({ user_id: decoded.id, tweet_id: id })
+      .onConflict(['user_id', 'tweet_id']).ignore();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.delete('/api/tweets/:id/bookmark', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { id } = req.params;
+    await db('bookmarks').where({ user_id: decoded.id, tweet_id: id }).del();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.get('/api/bookmarks', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const tweets = await db('tweets')
+      .join('users', 'tweets.user_id', 'users.id')
+      .join('bookmarks', 'tweets.id', 'bookmarks.tweet_id')
+      .where('bookmarks.user_id', decoded.id)
+      .select('tweets.*', 'users.username', 'users.display_name')
+      .select(
+        db.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [decoded.id]),
+        db.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [decoded.id]),
+        db.raw('1 as has_bookmarked')
+      )
+      .orderBy('bookmarks.created_at', 'desc');
+    res.json(tweets);
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+// LISTS
+app.post('/api/lists', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { name, description, private: isPrivate } = req.body;
+    const [list] = await db('lists').insert({
+      owner_id: decoded.id,
+      name,
+      description,
+      private: !!isPrivate
+    }).returning('*');
+    res.status(201).json(list);
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.get('/api/lists', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const lists = await db('lists').where('owner_id', decoded.id).orderBy('created_at', 'desc');
+    res.json(lists);
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.get('/api/lists/:id/tweets', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { id } = req.params;
+
+    const tweets = await db('tweets')
+      .join('users', 'tweets.user_id', 'users.id')
+      .join('list_members', 'tweets.user_id', 'list_members.user_id')
+      .where('list_members.list_id', id)
+      .select('tweets.*', 'users.username', 'users.display_name')
+      .select(
+        db.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [decoded.id]),
+        db.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [decoded.id]),
+        db.raw('EXISTS(SELECT 1 FROM bookmarks WHERE user_id = ? AND tweet_id = tweets.id) as has_bookmarked', [decoded.id])
+      )
+      .orderBy('tweets.created_at', 'desc')
+      .limit(100);
+    
+    res.json(tweets);
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
 app.get('/api/tweets', async (req, res) => {
   const authHeader = req.headers.authorization;
   let currentUserId: string | null = null;
@@ -102,7 +221,8 @@ app.get('/api/tweets', async (req, res) => {
 
       query.select(
         db.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [currentUserId]),
-        db.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [currentUserId])
+        db.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [currentUserId]),
+        db.raw('EXISTS(SELECT 1 FROM bookmarks WHERE user_id = ? AND tweet_id = tweets.id) as has_bookmarked', [currentUserId])
       );
     }
 

@@ -11,7 +11,7 @@ import { uploadFile } from './storage';
 const upload = multer({ storage: multer.memoryStorage() });
 
 const app = express();
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey_change_in_prod';
+const JWT_SECRET: string = process.env.JWT_SECRET || 'supersecretkey_change_in_prod';
 
 app.use(cors());
 app.use(express.json());
@@ -21,7 +21,7 @@ app.post('/api/tweets', upload.single('media'), async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { content, parent_tweet_id } = req.body;
@@ -80,7 +80,7 @@ app.post('/api/tweets/:id/bookmark', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { id } = req.params;
@@ -96,7 +96,7 @@ app.delete('/api/tweets/:id/bookmark', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { id } = req.params;
@@ -111,7 +111,7 @@ app.get('/api/bookmarks', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const tweets = await db('tweets')
@@ -136,7 +136,7 @@ app.post('/api/lists', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { name, description, private: isPrivate } = req.body;
@@ -156,7 +156,7 @@ app.get('/api/lists', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const lists = await db('lists').where('owner_id', decoded.id).orderBy('created_at', 'desc');
@@ -170,7 +170,7 @@ app.get('/api/lists/:id/tweets', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { id } = req.params;
@@ -199,7 +199,7 @@ app.get('/api/tweets', async (req, res) => {
   let currentUserId: string | null = null;
   if (authHeader) {
     try {
-      const token = authHeader.split(' ')[1];
+      const token = authHeader.split(' ')[1]!;
       const decoded: any = jwt.verify(token, JWT_SECRET);
       currentUserId = decoded.id;
     } catch (err) {}
@@ -235,12 +235,13 @@ app.get('/api/tweets', async (req, res) => {
 
 // SEARCH
 app.get('/api/search', async (req, res) => {
-  const { q, type } = req.query;
+  const q = req.query.q as string;
+  const type = req.query.type as string;
   const authHeader = req.headers.authorization;
   let currentUserId: string | null = null;
   if (authHeader) {
     try {
-      const token = authHeader.split(' ')[1];
+      const token = authHeader.split(' ')[1]!;
       const decoded: any = jwt.verify(token, JWT_SECRET);
       currentUserId = decoded.id;
     } catch (err) {}
@@ -302,7 +303,7 @@ app.post('/api/tweets/:id/like', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { id } = req.params;
@@ -331,7 +332,7 @@ app.delete('/api/tweets/:id/like', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { id } = req.params;
@@ -351,7 +352,7 @@ app.post('/api/tweets/:id/retweet', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { id } = req.params;
@@ -380,7 +381,7 @@ app.delete('/api/tweets/:id/retweet', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { id } = req.params;
@@ -403,7 +404,7 @@ app.get('/api/tweets/:id', async (req, res) => {
   let currentUserId: string | null = null;
   if (authHeader) {
     try {
-      const token = authHeader.split(' ')[1];
+      const token = authHeader.split(' ')[1]!;
       const decoded: any = jwt.verify(token, JWT_SECRET);
       currentUserId = decoded.id;
     } catch (err) {}
@@ -451,7 +452,7 @@ app.get('/api/feed', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const currentUserId = decoded.id;
@@ -504,7 +505,7 @@ app.post('/api/follow/:username', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { username } = req.params;
@@ -531,7 +532,7 @@ app.delete('/api/follow/:username', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { username } = req.params;
@@ -554,7 +555,7 @@ app.post('/api/users/:username/block', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { username } = req.params;
@@ -580,7 +581,7 @@ app.delete('/api/users/:username/block', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { username } = req.params;
@@ -598,7 +599,7 @@ app.post('/api/users/:username/mute', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { username } = req.params;
@@ -617,7 +618,7 @@ app.delete('/api/users/:username/mute', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { username } = req.params;
@@ -637,7 +638,7 @@ app.get('/api/users/:username', async (req, res) => {
   let currentUserId: string | null = null;
   if (authHeader) {
     try {
-      const token = authHeader.split(' ')[1];
+      const token = authHeader.split(' ')[1]!;
       const decoded: any = jwt.verify(token, JWT_SECRET);
       currentUserId = decoded.id;
     } catch (err) {}
@@ -683,7 +684,7 @@ app.get('/api/notifications', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const notifications = await db('notifications')
@@ -707,7 +708,7 @@ app.post('/api/messages', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { receiver_username, content } = req.body;
@@ -742,7 +743,7 @@ app.get('/api/messages', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     
@@ -780,7 +781,7 @@ app.get('/api/messages/:username', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { username } = req.params;
@@ -865,7 +866,7 @@ app.patch('/api/auth/profile', upload.single('avatar'), async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { display_name, bio } = req.body;
@@ -904,7 +905,7 @@ app.get('/api/auth/me', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1]!;
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     

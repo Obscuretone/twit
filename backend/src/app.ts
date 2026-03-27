@@ -4,12 +4,59 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from './db';
 import cache from './cache';
+import { sendToQueue } from './queue';
 
 const app = express();
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey_change_in_prod';
 
 app.use(cors());
 app.use(express.json());
+
+// TWEETS
+app.post('/api/tweets', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { content } = req.body;
+    if (!content || content.length > 280) {
+      return res.status(400).json({ error: 'Invalid content' });
+    }
+
+    const [tweet] = await db('tweets').insert({
+      user_id: decoded.id,
+      content
+    }).returning('*');
+
+    // Parse mentions
+    const mentions = content.match(/@(\w+)/g);
+    if (mentions) {
+      mentions.forEach((mention: string) => {
+        const username = mention.substring(1);
+        sendToQueue('mentions', { tweet_id: tweet.id, username, mentioner: decoded.username });
+      });
+    }
+
+    res.status(201).json(tweet);
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.get('/api/tweets', async (req, res) => {
+  try {
+    const tweets = await db('tweets')
+      .join('users', 'tweets.user_id', 'users.id')
+      .select('tweets.*', 'users.username', 'users.display_name')
+      .orderBy('tweets.created_at', 'desc')
+      .limit(100);
+    res.json(tweets);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'backend' });

@@ -125,6 +125,97 @@
   text-decoration: underline;
 }
 
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 32px;
+  width: 100%;
+  border-bottom: 1px solid var(--gray-alpha-20);
+}
+
+.logo {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--button-primary-background);
+}
+
+.userInfo {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.logoutLink {
+  background: none;
+  border: none;
+  color: var(--button-primary-background);
+  cursor: pointer;
+  font-size: 14px;
+  text-decoration: underline;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.tweetForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-bottom: 1px solid var(--gray-alpha-20);
+  padding-bottom: 24px;
+  margin-bottom: 24px;
+}
+
+.textarea {
+  width: 100%;
+  height: 100px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--gray-alpha-20);
+  background: transparent;
+  color: inherit;
+  font-size: 18px;
+  resize: none;
+}
+
+.tweetList {
+  display: flex;
+  flex-direction: column;
+}
+
+.tweetCard {
+  padding: 16px;
+  border-bottom: 1px solid var(--gray-alpha-10);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.displayName {
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+.username, .dot, .time {
+  color: #71767b;
+  font-size: 15px;
+}
+
+.tweetContent {
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.noTweets {
+  padding: 40px;
+  text-align: center;
+  color: #71767b;
+}
+
 .footer {
   grid-row-start: 3;
   display: flex;

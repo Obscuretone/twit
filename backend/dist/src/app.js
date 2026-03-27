@@ -16,6 +16,47 @@ const realtime_1 = require("./realtime");
 const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
 const app = (0, express_1.default)();
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey_change_in_prod';
+const isAdmin = async (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader)
+        return res.status(401).json({ error: 'Unauthorized' });
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = await (0, db_1.default)('users').where('id', decoded.id).first();
+        if (!user || !user.is_admin) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+        if (user.is_banned) {
+            return res.status(403).json({ error: 'Account is banned' });
+        }
+        req.user = user;
+        next();
+    }
+    catch (err) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+};
+const authenticate = async (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader)
+        return res.status(401).json({ error: 'Unauthorized' });
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        // Check if user is banned in cache first for scalability
+        const cacheKey = `banned_${decoded.id}`;
+        const cachedBanned = await cache_1.default.get(cacheKey);
+        if (cachedBanned && cachedBanned.value?.toString() === 'true') {
+            return res.status(403).json({ error: 'Account is banned' });
+        }
+        req.user = decoded;
+        next();
+    }
+    catch (err) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+};
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
 // TWEETS
@@ -112,6 +153,7 @@ app.get('/api/bookmarks', async (req, res) => {
             .join('users', 'tweets.user_id', 'users.id')
             .join('bookmarks', 'tweets.id', 'bookmarks.tweet_id')
             .where('bookmarks.user_id', decoded.id)
+            .whereNull('tweets.deleted_at')
             .select('tweets.*', 'users.username', 'users.display_name')
             .select(db_1.default.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [decoded.id]), db_1.default.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [decoded.id]), db_1.default.raw('1 as has_bookmarked'))
             .orderBy('bookmarks.created_at', 'desc');
@@ -168,6 +210,7 @@ app.get('/api/lists/:id/tweets', async (req, res) => {
             .join('users', 'tweets.user_id', 'users.id')
             .join('list_members', 'tweets.user_id', 'list_members.user_id')
             .where('list_members.list_id', id)
+            .whereNull('tweets.deleted_at')
             .select('tweets.*', 'users.username', 'users.display_name')
             .select(db_1.default.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [decoded.id]), db_1.default.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [decoded.id]), db_1.default.raw('EXISTS(SELECT 1 FROM bookmarks WHERE user_id = ? AND tweet_id = tweets.id) as has_bookmarked', [decoded.id]))
             .orderBy('tweets.created_at', 'desc')
@@ -194,6 +237,7 @@ app.get('/api/tweets', async (req, res) => {
             .join('users', 'tweets.user_id', 'users.id')
             .select('tweets.*', 'users.username', 'users.display_name')
             .whereNull('tweets.parent_tweet_id')
+            .whereNull('tweets.deleted_at')
             .orderBy('tweets.created_at', 'desc')
             .limit(100);
         if (currentUserId) {
@@ -281,7 +325,7 @@ app.post('/api/tweets/:id/like', async (req, res) => {
     try {
         const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
         const { id } = req.params;
-        const tweet = await (0, db_1.default)('tweets').where('id', id).first();
+        const tweet = await (0, db_1.default)('tweets').where('id', id).whereNull('deleted_at').first();
         if (!tweet)
             return res.status(404).json({ error: 'Tweet not found' });
         await (0, db_1.default)('likes').insert({
@@ -324,7 +368,7 @@ app.post('/api/tweets/:id/retweet', async (req, res) => {
     try {
         const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
         const { id } = req.params;
-        const tweet = await (0, db_1.default)('tweets').where('id', id).first();
+        const tweet = await (0, db_1.default)('tweets').where('id', id).whereNull('deleted_at').first();
         if (!tweet)
             return res.status(404).json({ error: 'Tweet not found' });
         await (0, db_1.default)('retweets').insert({
@@ -376,11 +420,13 @@ app.get('/api/tweets/:id', async (req, res) => {
         const tweetQuery = (0, db_1.default)('tweets')
             .join('users', 'tweets.user_id', 'users.id')
             .where('tweets.id', id)
+            .whereNull('tweets.deleted_at')
             .select('tweets.*', 'users.username', 'users.display_name')
             .first();
         const repliesQuery = (0, db_1.default)('tweets')
             .join('users', 'tweets.user_id', 'users.id')
             .where('tweets.parent_tweet_id', id)
+            .whereNull('tweets.deleted_at')
             .select('tweets.*', 'users.username', 'users.display_name')
             .orderBy('tweets.created_at', 'asc');
         if (currentUserId) {
@@ -417,6 +463,7 @@ app.get('/api/feed', async (req, res) => {
             const tweets = await (0, db_1.default)('tweets')
                 .join('users', 'tweets.user_id', 'users.id')
                 .whereIn('tweets.id', tweetIds)
+                .whereNull('tweets.deleted_at')
                 .select('tweets.*', 'users.username', 'users.display_name')
                 .select(db_1.default.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [currentUserId]), db_1.default.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [currentUserId]))
                 .orderBy('tweets.created_at', 'desc');
@@ -426,6 +473,7 @@ app.get('/api/feed', async (req, res) => {
             .join('users', 'tweets.user_id', 'users.id')
             .join('follows', 'tweets.user_id', 'follows.following_id')
             .where('follows.follower_id', currentUserId)
+            .whereNull('tweets.deleted_at')
             .select('tweets.*', 'users.username', 'users.display_name')
             .select(db_1.default.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [currentUserId]), db_1.default.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [currentUserId]))
             .orderBy('tweets.created_at', 'desc')
@@ -745,6 +793,94 @@ app.get('/api/realtime/stream', async (req, res) => {
         res.status(401).json({ error: 'Invalid token' });
     }
 });
+// ADMIN ENDPOINTS
+app.get('/api/admin/stats', isAdmin, async (req, res) => {
+    try {
+        const [userCount] = await (0, db_1.default)('users').count('id as count');
+        const [tweetCount] = await (0, db_1.default)('tweets').whereNull('deleted_at').count('id as count');
+        const [likeCount] = await (0, db_1.default)('likes').count('user_id as count');
+        // Recent activity (last 24h)
+        const [newUsers] = await (0, db_1.default)('users').where('created_at', '>', db_1.default.raw("NOW() - INTERVAL '24 HOURS'")).count('id as count');
+        const [newTweets] = await (0, db_1.default)('tweets').whereNull('deleted_at').where('created_at', '>', db_1.default.raw("NOW() - INTERVAL '24 HOURS'")).count('id as count');
+        res.json({
+            totals: {
+                users: parseInt(userCount?.count || '0'),
+                tweets: parseInt(tweetCount?.count || '0'),
+                likes: parseInt(likeCount?.count || '0')
+            },
+            last24h: {
+                newUsers: parseInt(newUsers?.count || '0'),
+                newTweets: parseInt(newTweets?.count || '0')
+            }
+        });
+    }
+    catch (err) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+app.get('/api/admin/users', isAdmin, async (req, res) => {
+    const { q } = req.query;
+    try {
+        const query = (0, db_1.default)('users').select('id', 'username', 'display_name', 'email', 'is_admin', 'is_banned', 'created_at').orderBy('created_at', 'desc').limit(100);
+        if (q) {
+            query.where('username', 'ilike', `%${q}%`).orWhere('email', 'ilike', `%${q}%`);
+        }
+        const users = await query;
+        res.json(users);
+    }
+    catch (err) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+app.patch('/api/admin/users/:id', isAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { is_admin, is_banned } = req.body;
+    try {
+        const updateData = {};
+        if (is_admin !== undefined)
+            updateData.is_admin = is_admin;
+        if (is_banned !== undefined)
+            updateData.is_banned = is_banned;
+        await (0, db_1.default)('users').where('id', id).update(updateData);
+        if (is_banned !== undefined) {
+            const cacheKey = `banned_${id}`;
+            if (is_banned) {
+                await cache_1.default.set(cacheKey, 'true', { expires: 86400 }); // 1 day
+            }
+            else {
+                await cache_1.default.delete(cacheKey);
+            }
+        }
+        res.json({ success: true });
+    }
+    catch (err) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+app.get('/api/admin/tweets', isAdmin, async (req, res) => {
+    try {
+        const tweets = await (0, db_1.default)('tweets')
+            .join('users', 'tweets.user_id', 'users.id')
+            .select('tweets.*', 'users.username')
+            .whereNull('tweets.deleted_at')
+            .orderBy('tweets.created_at', 'desc')
+            .limit(100);
+        res.json(tweets);
+    }
+    catch (err) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+app.delete('/api/admin/tweets/:id', isAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        await (0, db_1.default)('tweets').where('id', id).update({ deleted_at: db_1.default.fn.now() });
+        res.json({ success: true });
+    }
+    catch (err) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', service: 'backend' });
 });
@@ -785,6 +921,9 @@ app.post('/api/auth/login', async (req, res) => {
             .first();
         if (!user || !(await bcryptjs_1.default.compare(password, user.password_hash))) {
             return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        if (user.is_banned) {
+            return res.status(403).json({ error: 'Account is banned' });
         }
         const token = jsonwebtoken_1.default.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '1d' });
         res.json({
@@ -850,7 +989,14 @@ app.get('/api/auth/me', async (req, res) => {
         const user = await (0, db_1.default)('users').where('id', decoded.id).first();
         if (!user)
             return res.status(404).json({ error: 'User not found' });
-        const userProfile = { id: user.id, username: user.username, email: user.email, display_name: user.display_name };
+        const userProfile = {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            display_name: user.display_name,
+            is_admin: !!user.is_admin,
+            is_banned: !!user.is_banned
+        };
         // Set cache (10 mins)
         await cache_1.default.set(cacheKey, JSON.stringify(userProfile), { expires: 600 });
         res.json(userProfile);

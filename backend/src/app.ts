@@ -582,6 +582,46 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // ME (Get current user)
+// PROFILE
+app.patch('/api/auth/profile', upload.single('avatar'), async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { display_name, bio } = req.body;
+    
+    let avatar_url = undefined;
+    if (req.file) {
+      avatar_url = await uploadFile(req.file);
+    }
+
+    const updateData: any = {};
+    if (display_name !== undefined) updateData.display_name = display_name;
+    if (bio !== undefined) updateData.bio = bio;
+    if (avatar_url !== undefined) updateData.avatar_url = avatar_url;
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No data provided for update' });
+    }
+
+    const [user] = await db('users')
+      .where('id', decoded.id)
+      .update(updateData)
+      .returning(['id', 'username', 'display_name', 'bio', 'avatar_url']);
+
+    // Invalidate cache
+    const cacheKey = `user_profile_${decoded.id}`;
+    await cache.delete(cacheKey);
+
+    res.json(user);
+  } catch (err) {
+    console.error('Failed to update profile:', err);
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
 app.get('/api/auth/me', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });

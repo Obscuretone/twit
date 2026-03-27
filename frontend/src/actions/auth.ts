@@ -85,3 +85,22 @@ export async function getSession() {
     return null;
   }
 }
+
+export async function updateProfile(formData: FormData) {
+  const cookieStore = await cookies();
+  const token = cookieStore.get('twit_session')?.value;
+  if (!token) return;
+
+  const response = await fetch(`${API_URL}/api/auth/profile`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+
+  if (response.ok) {
+    const user = await response.json();
+    revalidatePath(`/settings`);
+    revalidatePath(`/${user.username}`);
+    redirect(`/${user.username}`);
+  }
+}

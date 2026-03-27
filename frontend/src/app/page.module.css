@@ -1,0 +1,127 @@
+.page {
+  --gray-rgb: 0, 0, 0;
+  --gray-alpha-20: rgba(var(--gray-rgb), 0.2);
+  --gray-alpha-10: rgba(var(--gray-rgb), 0.1);
+
+  --button-primary-background: #1d9bf0;
+  --button-primary-hover: #1a8cd8;
+  --button-secondary-background: transparent;
+  --button-secondary-hover: rgba(15, 20, 25, 0.1);
+
+  display: grid;
+  grid-template-rows: 20px 1fr 20px;
+  align-items: center;
+  justify-items: center;
+  min-height: 100vh;
+  padding: 80px;
+  gap: 64px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .page {
+    --gray-rgb: 255, 255, 255;
+    --button-secondary-hover: rgba(239, 243, 244, 0.1);
+  }
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  grid-row-start: 2;
+  width: 100%;
+  max-width: 600px;
+}
+
+.twitHeader h1 {
+  font-size: 64px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.twitHeader p {
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--gray-alpha-20);
+}
+
+.authBox {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  margin-top: 32px;
+}
+
+.action {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.action h2 {
+  font-size: 31px;
+  font-weight: 700;
+}
+
+.action h3 {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.signupButton, .loginButton {
+  border-radius: 9999px;
+  border: 1px solid var(--gray-alpha-20);
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 17px;
+  padding: 12px 32px;
+  cursor: pointer;
+  width: 100%;
+  max-width: 300px;
+}
+
+.signupButton {
+  background: var(--button-primary-background);
+  color: white;
+  border: none;
+}
+
+.signupButton:hover {
+  background: var(--button-primary-hover);
+}
+
+.loginButton {
+  background: var(--button-secondary-background);
+  color: var(--button-primary-background);
+  border: 1px solid var(--gray-alpha-20);
+}
+
+.loginButton:hover {
+  background: var(--button-secondary-hover);
+}
+
+.footer {
+  grid-row-start: 3;
+  display: flex;
+  gap: 24px;
+}
+
+.footer p {
+  font-size: 13px;
+  color: #71767b;
+}
+
+/* Mobile styles */
+@media (max-width: 600px) {
+  .page {
+    padding: 32px;
+    padding-bottom: 80px;
+  }
+
+  .twitHeader h1 {
+    font-size: 40px;
+  }
+}

@@ -7,14 +7,21 @@ const REALTIME_EXCHANGE = 'realtime_events';
 class RealtimeBroadcaster {
     clients = [];
     eventEmitter = new events_1.EventEmitter();
+    initialized = false;
     constructor() {
-        this.setupRabbitMQ();
+        // Initialization happens via init()
+    }
+    async init() {
+        if (this.initialized)
+            return;
+        await this.setupRabbitMQ();
+        this.initialized = true;
     }
     async setupRabbitMQ() {
         try {
             const channel = (0, queue_1.getChannel)();
             if (!channel) {
-                console.error('RabbitMQ channel not available for RealtimeBroadcaster');
+                console.warn('RabbitMQ channel not available for RealtimeBroadcaster. Make sure connectQueue() is called before init().');
                 return;
             }
             await channel.assertExchange(REALTIME_EXCHANGE, 'fanout', { durable: false });

@@ -1,0 +1,13 @@
+<form action="/auth/signup" method="POST" class="form">
+    <h2>Create your account</h2>
+    <% if (error) { %>
+        <p class="errorMessage"><%= error %></p>
+    <% } %>
+    <input type="text" name="username" placeholder="Username" required>
+    <input type="email" name="email" placeholder="Email" required>
+    <input type="password" name="password" placeholder="Password" required>
+    <button type="submit">Sign Up</button>
+    <p style="font-size: 14px; text-align: center; margin-top: 16px;">
+        Already have an account? <a href="/login" style="color: #1d9bf0;">Log in</a>
+    </p>
+</form>

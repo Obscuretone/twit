@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { Response } from 'express';
-import { connectQueue, getChannel } from './queue';
+import { getChannel } from './queue';
 
 import amqp from 'amqplib';
 
@@ -15,16 +15,23 @@ interface Client {
 class RealtimeBroadcaster {
   private clients: Client[] = [];
   private eventEmitter = new EventEmitter();
+  private initialized = false;
 
   constructor() {
-    this.setupRabbitMQ();
+    // Initialization happens via init()
+  }
+
+  public async init() {
+    if (this.initialized) return;
+    await this.setupRabbitMQ();
+    this.initialized = true;
   }
 
   private async setupRabbitMQ() {
     try {
       const channel = getChannel();
       if (!channel) {
-        console.error('RabbitMQ channel not available for RealtimeBroadcaster');
+        console.warn('RabbitMQ channel not available for RealtimeBroadcaster. Make sure connectQueue() is called before init().');
         return;
       }
 

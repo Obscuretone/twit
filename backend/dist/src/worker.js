@@ -12,11 +12,10 @@ async function startWorker() {
     console.log('Starting background workers...');
     // 1. Mention Processing -> Notification Trigger
     (0, queue_1.consumeQueue)('mentions', async (data) => {
-        const { tweet_id, username, mentioner, mentioner_id } = data;
+        const { tweet_id, username, mentioner } = data;
         console.log(`Processing mention: @${username} by @${mentioner}`);
         const user = await (0, db_1.default)('users').where('username', username).first();
         if (user) {
-            // Find the user_id for the mentioner if not provided
             const from_user = await (0, db_1.default)('users').where('username', mentioner).first();
             if (from_user) {
                 (0, queue_1.sendToQueue)('notifications', {
@@ -30,22 +29,28 @@ async function startWorker() {
     });
     // 2. Feed Fan-out
     (0, queue_1.consumeQueue)('feeds', async (data) => {
-        // ... same as before
         const { tweet_id, user_id, type } = data;
         if (type === 'fan_out') {
             const followers = await (0, db_1.default)('follows').where('following_id', user_id).select('follower_id');
-            for (const follower of followers) {
-                const cacheKey = `feed_${follower.follower_id}`;
-                const cachedFeed = await cache_1.default.get(cacheKey);
-                let feed = [];
-                if (cachedFeed && cachedFeed.value) {
-                    feed = JSON.parse(cachedFeed.value.toString());
+            // Include the user themselves in the fan-out so they see their own tweets in their feed
+            const allRecipientIds = [...followers.map((f) => f.follower_id), user_id];
+            for (const recipientId of allRecipientIds) {
+                try {
+                    const cacheKey = `feed_${recipientId}`;
+                    const cachedFeed = await cache_1.default.get(cacheKey);
+                    let feed = [];
+                    if (cachedFeed && cachedFeed.value) {
+                        feed = JSON.parse(cachedFeed.value.toString());
+                    }
+                    feed.unshift(tweet_id);
+                    feed = feed.slice(0, 100); // Keep last 100 items
+                    await cache_1.default.set(cacheKey, JSON.stringify(feed), { expires: 86400 });
+                    // Notify user about new feed item in real-time
+                    realtime_1.realtimeBroadcaster.publishEvent(recipientId, 'feed_update', { tweet_id });
                 }
-                feed.unshift(tweet_id);
-                feed = feed.slice(0, 100);
-                await cache_1.default.set(cacheKey, JSON.stringify(feed), { expires: 86400 });
-                // Notify user about new feed item
-                realtime_1.realtimeBroadcaster.publishEvent(follower.follower_id, 'feed_update', { tweet_id });
+                catch (err) {
+                    console.error(`Failed to update feed for user ${recipientId}:`, err);
+                }
             }
         }
     });
@@ -102,14 +107,19 @@ async function startWorker() {
             console.error(`Failed to update hashtag #${tag}:`, err);
         }
     });
+    // 6. Direct Messages
     (0, queue_1.consumeQueue)('direct_messages', async (data) => {
         const { message_id, sender_id, receiver_id } = data;
         console.log(`Delivering message ${message_id} from ${sender_id} to ${receiver_id}`);
-        // Get message details
-        const message = await (0, db_1.default)('messages').where('id', message_id).first();
-        if (message) {
-            realtime_1.realtimeBroadcaster.publishEvent(receiver_id, 'dm', message);
-            realtime_1.realtimeBroadcaster.publishEvent(sender_id, 'dm', message);
+        try {
+            const message = await (0, db_1.default)('messages').where('id', message_id).first();
+            if (message) {
+                realtime_1.realtimeBroadcaster.publishEvent(receiver_id, 'dm', message);
+                realtime_1.realtimeBroadcaster.publishEvent(sender_id, 'dm', message);
+            }
+        }
+        catch (err) {
+            console.error('Failed to deliver message:', err);
         }
     });
     // 7. Analytics (View Counts)

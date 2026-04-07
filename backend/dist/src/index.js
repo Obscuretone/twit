@@ -7,6 +7,7 @@ const app_1 = __importDefault(require("./app"));
 const queue_1 = require("./queue");
 const worker_1 = require("./worker");
 const storage_1 = require("./storage");
+const realtime_1 = require("./realtime");
 const PORT = process.env.PORT || 4000;
 const delay = (ms) => new Promise(res => setTimeout(res, ms));
 async function start() {
@@ -24,6 +25,10 @@ async function start() {
     }
     if (!rabbitmqConnected) {
         console.error('Failed to connect to RabbitMQ after multiple attempts.');
+    }
+    else {
+        // Initialize realtime broadcaster now that RabbitMQ is ready
+        await realtime_1.realtimeBroadcaster.init();
     }
     await (0, storage_1.initS3)();
     await (0, worker_1.startWorker)();

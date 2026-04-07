@@ -2,7 +2,9 @@ import { Response } from 'express';
 declare class RealtimeBroadcaster {
     private clients;
     private eventEmitter;
+    private initialized;
     constructor();
+    init(): Promise<void>;
     private setupRabbitMQ;
     addClient(userId: string, res: Response): string;
     removeClient(clientId: string): void;

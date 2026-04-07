@@ -14,15 +14,20 @@ const multer_1 = __importDefault(require("multer"));
 const storage_1 = require("./storage");
 const realtime_1 = require("./realtime");
 const rateLimiter_1 = require("./middleware/rateLimiter");
-const spamDetector_1 = require("./middleware/spamDetector");
+const cookie_parser_1 = __importDefault(require("cookie-parser"));
+const path_1 = __importDefault(require("path"));
 const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
 const app = (0, express_1.default)();
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey_change_in_prod';
+// Configure EJS
+app.set('view engine', 'ejs');
+app.set('views', path_1.default.join(__dirname, '../views'));
+app.use(express_1.default.static(path_1.default.join(__dirname, '../public')));
+app.use((0, cookie_parser_1.default)());
 const isAdmin = async (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
+    const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
+    if (!token)
         return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
     try {
         const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
         const user = await (0, db_1.default)('users').where('id', decoded.id).first();
@@ -36,39 +41,171 @@ const isAdmin = async (req, res, next) => {
         next();
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        if (err instanceof jsonwebtoken_1.default.JsonWebTokenError) {
+            return res.status(401).json({ error: 'Invalid token' });
+        }
+        console.error('isAdmin middleware error:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 };
 const authenticate = async (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
+    const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
+    if (!token)
         return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
     try {
         const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
         // Check if user is banned in cache first for scalability
-        const cacheKey = `banned_${decoded.id}`;
-        const cachedBanned = await cache_1.default.get(cacheKey);
-        if (cachedBanned && cachedBanned.value?.toString() === 'true') {
-            return res.status(403).json({ error: 'Account is banned' });
+        try {
+            const cacheKey = `banned_${decoded.id}`;
+            const cachedBanned = await cache_1.default.get(cacheKey);
+            if (cachedBanned && cachedBanned.value?.toString() === 'true') {
+                return res.status(403).json({ error: 'Account is banned' });
+            }
+        }
+        catch (cacheErr) {
+            console.error('Cache error in authenticate middleware (ignoring):', cacheErr);
         }
         req.user = decoded;
         next();
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        if (err instanceof jsonwebtoken_1.default.JsonWebTokenError) {
+            return res.status(401).json({ error: 'Invalid token' });
+        }
+        console.error('Authentication middleware error:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
+};
+const optionalAuthenticate = async (req, res, next) => {
+    const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
+    if (token) {
+        try {
+            const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+            req.user = decoded;
+        }
+        catch (err) { }
+    }
+    next();
 };
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
-// TWEETS
-app.post('/api/tweets', authenticate, (0, rateLimiter_1.rateLimiter)(60, 10, 'tweet'), spamDetector_1.spamDetector, upload.single('media'), async (req, res) => {
+app.use(express_1.default.urlencoded({ extended: true }));
+// Helper to get global view data
+const getViewData = async (req) => {
+    const user = req.user;
+    const trending = await (0, db_1.default)('hashtags').orderBy('tweet_count', 'desc').limit(10);
+    let notificationsCount = 0;
+    if (user) {
+        const result = await (0, db_1.default)('notifications').where({ user_id: user.id, is_read: false }).count('id as count').first();
+        notificationsCount = parseInt(result?.count || '0');
+    }
+    return { user, trending, notificationsCount, title: 'Twit' };
+};
+// VIEW ROUTES
+app.get('/', optionalAuthenticate, async (req, res) => {
+    const data = await getViewData(req);
+    let tweets = [];
+    if (data.user) {
+        // Get feed for logged in user
+        const currentUserId = data.user.id;
+        tweets = await (0, db_1.default)('tweets')
+            .join('users', 'tweets.user_id', 'users.id')
+            .leftJoin('follows', 'tweets.user_id', 'follows.following_id')
+            .where(function () {
+            this.where('follows.follower_id', currentUserId)
+                .orWhere('tweets.user_id', currentUserId);
+        })
+            .whereNull('tweets.parent_tweet_id')
+            .whereNull('tweets.deleted_at')
+            .select('tweets.*', 'users.username', 'users.display_name')
+            .select(db_1.default.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [currentUserId]), db_1.default.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [currentUserId]))
+            .orderBy('tweets.created_at', 'desc')
+            .limit(100);
+    }
+    else {
+        // Get latest tweets for guests
+        tweets = await (0, db_1.default)('tweets')
+            .join('users', 'tweets.user_id', 'users.id')
+            .whereNull('tweets.parent_tweet_id')
+            .whereNull('tweets.deleted_at')
+            .select('tweets.*', 'users.username', 'users.display_name')
+            .orderBy('tweets.created_at', 'desc')
+            .limit(20);
+    }
+    res.render('index', { ...data, tweets });
+});
+app.get('/login', optionalAuthenticate, async (req, res) => {
+    if (req.user)
+        return res.redirect('/');
+    const data = await getViewData(req);
+    res.render('login', { ...data, title: 'Login', error: req.query.error });
+});
+app.get('/search', optionalAuthenticate, async (req, res) => {
+    const q = req.query.q;
+    const data = await getViewData(req);
+    let results = [];
+    if (q) {
+        results = await (0, db_1.default)('tweets')
+            .join('users', 'tweets.user_id', 'users.id')
+            .whereRaw("to_tsvector('english', tweets.content) @@ plainto_tsquery('english', ?)", [q])
+            .whereNull('tweets.deleted_at')
+            .select('tweets.*', 'users.username', 'users.display_name')
+            .orderBy('tweets.created_at', 'desc')
+            .limit(50);
+    }
+    res.render('search', { ...data, title: `Search: ${q || ''}`, q, results });
+});
+// FORM HANDLERS
+app.post('/auth/login', async (req, res) => {
+    const { identifier, password } = req.body;
+    try {
+        const user = await (0, db_1.default)('users')
+            .where('username', identifier)
+            .orWhere('email', identifier)
+            .first();
+        if (!user || !(await bcryptjs_1.default.compare(password, user.password_hash))) {
+            return res.redirect('/login?error=Invalid credentials');
+        }
+        if (user.is_banned) {
+            return res.redirect('/login?error=Account is banned');
+        }
+        const token = jsonwebtoken_1.default.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '1d' });
+        res.cookie('token', token, { httpOnly: true, maxAge: 86400000 });
+        res.redirect('/');
+    }
+    catch (err) {
+        res.redirect('/login?error=Internal server error');
+    }
+});
+app.post('/auth/signup', async (req, res) => {
+    const { username, email, password } = req.body;
+    try {
+        const password_hash = await bcryptjs_1.default.hash(password, 10);
+        const [user] = await (0, db_1.default)('users').insert({
+            username,
+            email,
+            password_hash,
+            display_name: username
+        }).returning(['id', 'username']);
+        const token = jsonwebtoken_1.default.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '1d' });
+        res.cookie('token', token, { httpOnly: true, maxAge: 86400000 });
+        res.redirect('/');
+    }
+    catch (err) {
+        if (err.code === '23505') {
+            return res.redirect('/signup?error=Username or email already exists');
+        }
+        res.redirect('/signup?error=Internal server error');
+    }
+});
+app.post('/auth/logout', (req, res) => {
+    res.clearCookie('token');
+    res.redirect('/');
+});
+app.post('/tweets', authenticate, upload.single('media'), async (req, res) => {
     const user = req.user;
     try {
-        const { content, parent_tweet_id } = req.body;
-        if (!content || content.length > 280) {
-            return res.status(400).json({ error: 'Invalid content' });
-        }
+        const { content } = req.body;
         let media_url = null;
         if (req.file) {
             const key = await (0, storage_1.uploadFile)(req.file);
@@ -77,101 +214,97 @@ app.post('/api/tweets', authenticate, (0, rateLimiter_1.rateLimiter)(60, 10, 'tw
         const [tweet] = await (0, db_1.default)('tweets').insert({
             user_id: user.id,
             content,
-            parent_tweet_id: parent_tweet_id || null,
             media_url
         }).returning('*');
-        // If it's a reply, increment parent's reply count
-        if (parent_tweet_id) {
-            await (0, db_1.default)('tweets').where('id', parent_tweet_id).increment('reply_count', 1);
-        }
-        // Fan-out to followers (send to queue for processing)
         (0, queue_1.sendToQueue)('feeds', { tweet_id: tweet.id, user_id: user.id, type: 'fan_out' });
-        // Parse mentions
-        const mentions = content.match(/@(\w+)/g);
-        if (mentions) {
-            mentions.forEach((mention) => {
-                const username = mention.substring(1);
-                (0, queue_1.sendToQueue)('mentions', { tweet_id: tweet.id, username, mentioner: user.username });
-            });
-        }
-        // Parse hashtags
-        const hashtags = content.match(/#(\w+)/g);
-        if (hashtags) {
-            hashtags.forEach((tag) => {
-                (0, queue_1.sendToQueue)('hashtags', { tag: tag.substring(1).toLowerCase() });
-            });
-        }
-        res.status(201).json(tweet);
+        res.redirect('/');
     }
     catch (err) {
-        console.error('Failed to create tweet:', err);
-        res.status(401).json({ error: 'Invalid token' });
+        res.redirect('/?error=Failed to post tweet');
+    }
+});
+// TWEET ACTIONS (Redirect back)
+app.post('/tweets/:id/like', authenticate, async (req, res) => {
+    try {
+        const user = req.user;
+        const { id } = req.params;
+        const tweet = await (0, db_1.default)('tweets').where('id', id).first();
+        if (tweet) {
+            await (0, db_1.default)('likes').insert({ user_id: user.id, tweet_id: id }).onConflict(['user_id', 'tweet_id']).ignore();
+            (0, queue_1.sendToQueue)('engagement', { tweet_id: id, type: 'like', action: 'inc' });
+        }
+        res.redirect('back');
+    }
+    catch (err) {
+        res.redirect('back');
+    }
+});
+app.post('/tweets/:id/retweet', authenticate, async (req, res) => {
+    try {
+        const user = req.user;
+        const { id } = req.params;
+        const tweet = await (0, db_1.default)('tweets').where('id', id).first();
+        if (tweet) {
+            await (0, db_1.default)('retweets').insert({ user_id: user.id, tweet_id: id }).onConflict(['user_id', 'tweet_id']).ignore();
+            (0, queue_1.sendToQueue)('engagement', { tweet_id: id, type: 'retweet', action: 'inc' });
+        }
+        res.redirect('back');
+    }
+    catch (err) {
+        res.redirect('back');
     }
 });
 // BOOKMARKS
-app.post('/api/tweets/:id/bookmark', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.post('/api/tweets/:id/bookmark', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const { id } = req.params;
-        await (0, db_1.default)('bookmarks').insert({ user_id: decoded.id, tweet_id: id })
+        await (0, db_1.default)('bookmarks').insert({ user_id: user.id, tweet_id: id })
             .onConflict(['user_id', 'tweet_id']).ignore();
         res.json({ success: true });
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to bookmark tweet:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
-app.delete('/api/tweets/:id/bookmark', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.delete('/api/tweets/:id/bookmark', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const { id } = req.params;
-        await (0, db_1.default)('bookmarks').where({ user_id: decoded.id, tweet_id: id }).del();
+        await (0, db_1.default)('bookmarks').where({ user_id: user.id, tweet_id: id }).del();
         res.json({ success: true });
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to remove bookmark:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
-app.get('/api/bookmarks', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.get('/api/bookmarks', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const tweets = await (0, db_1.default)('tweets')
             .join('users', 'tweets.user_id', 'users.id')
             .join('bookmarks', 'tweets.id', 'bookmarks.tweet_id')
-            .where('bookmarks.user_id', decoded.id)
+            .where('bookmarks.user_id', user.id)
             .whereNull('tweets.deleted_at')
             .select('tweets.*', 'users.username', 'users.display_name')
-            .select(db_1.default.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [decoded.id]), db_1.default.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [decoded.id]), db_1.default.raw('1 as has_bookmarked'))
+            .select(db_1.default.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [user.id]), db_1.default.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [user.id]), db_1.default.raw('1 as has_bookmarked'))
             .orderBy('bookmarks.created_at', 'desc');
         res.json(tweets);
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to get bookmarks:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 // LISTS
-app.post('/api/lists', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.post('/api/lists', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const { name, description, private: isPrivate } = req.body;
         const [list] = await (0, db_1.default)('lists').insert({
-            owner_id: decoded.id,
+            owner_id: user.id,
             name,
             description,
             private: !!isPrivate
@@ -179,30 +312,24 @@ app.post('/api/lists', async (req, res) => {
         res.status(201).json(list);
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to create list:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
-app.get('/api/lists', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.get('/api/lists', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
-        const lists = await (0, db_1.default)('lists').where('owner_id', decoded.id).orderBy('created_at', 'desc');
+        const user = req.user;
+        const lists = await (0, db_1.default)('lists').where('owner_id', user.id).orderBy('created_at', 'desc');
         res.json(lists);
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to get lists:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
-app.get('/api/lists/:id/tweets', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.get('/api/lists/:id/tweets', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const { id } = req.params;
         const tweets = await (0, db_1.default)('tweets')
             .join('users', 'tweets.user_id', 'users.id')
@@ -210,13 +337,14 @@ app.get('/api/lists/:id/tweets', async (req, res) => {
             .where('list_members.list_id', id)
             .whereNull('tweets.deleted_at')
             .select('tweets.*', 'users.username', 'users.display_name')
-            .select(db_1.default.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [decoded.id]), db_1.default.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [decoded.id]), db_1.default.raw('EXISTS(SELECT 1 FROM bookmarks WHERE user_id = ? AND tweet_id = tweets.id) as has_bookmarked', [decoded.id]))
+            .select(db_1.default.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [user.id]), db_1.default.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [user.id]), db_1.default.raw('EXISTS(SELECT 1 FROM bookmarks WHERE user_id = ? AND tweet_id = tweets.id) as has_bookmarked', [user.id]))
             .orderBy('tweets.created_at', 'desc')
             .limit(100);
         res.json(tweets);
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to get list tweets:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 app.get('/api/tweets', async (req, res) => {
@@ -335,90 +463,78 @@ app.get('/api/trending', async (req, res) => {
     }
 });
 // ENGAGEMENT (Likes & Retweets)
-app.post('/api/tweets/:id/like', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.post('/api/tweets/:id/like', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const { id } = req.params;
         const tweet = await (0, db_1.default)('tweets').where('id', id).whereNull('deleted_at').first();
         if (!tweet)
             return res.status(404).json({ error: 'Tweet not found' });
         await (0, db_1.default)('likes').insert({
-            user_id: decoded.id,
+            user_id: user.id,
             tweet_id: id
         }).onConflict(['user_id', 'tweet_id']).ignore();
         (0, queue_1.sendToQueue)('engagement', { tweet_id: id, type: 'like', action: 'inc' });
-        if (tweet.user_id !== decoded.id) {
-            (0, queue_1.sendToQueue)('notifications', { user_id: tweet.user_id, from_user_id: decoded.id, tweet_id: id, type: 'like' });
+        if (tweet.user_id !== user.id) {
+            (0, queue_1.sendToQueue)('notifications', { user_id: tweet.user_id, from_user_id: user.id, tweet_id: id, type: 'like' });
         }
         res.json({ success: true });
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to like tweet:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
-app.delete('/api/tweets/:id/like', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.delete('/api/tweets/:id/like', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const { id } = req.params;
-        const deleted = await (0, db_1.default)('likes').where({ user_id: decoded.id, tweet_id: id }).del();
+        const deleted = await (0, db_1.default)('likes').where({ user_id: user.id, tweet_id: id }).del();
         if (deleted) {
             (0, queue_1.sendToQueue)('engagement', { tweet_id: id, type: 'like', action: 'dec' });
         }
         res.json({ success: true });
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to unlike tweet:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
-app.post('/api/tweets/:id/retweet', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.post('/api/tweets/:id/retweet', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const { id } = req.params;
         const tweet = await (0, db_1.default)('tweets').where('id', id).whereNull('deleted_at').first();
         if (!tweet)
             return res.status(404).json({ error: 'Tweet not found' });
         await (0, db_1.default)('retweets').insert({
-            user_id: decoded.id,
+            user_id: user.id,
             tweet_id: id
         }).onConflict(['user_id', 'tweet_id']).ignore();
         (0, queue_1.sendToQueue)('engagement', { tweet_id: id, type: 'retweet', action: 'inc' });
-        if (tweet.user_id !== decoded.id) {
-            (0, queue_1.sendToQueue)('notifications', { user_id: tweet.user_id, from_user_id: decoded.id, tweet_id: id, type: 'retweet' });
+        if (tweet.user_id !== user.id) {
+            (0, queue_1.sendToQueue)('notifications', { user_id: tweet.user_id, from_user_id: user.id, tweet_id: id, type: 'retweet' });
         }
         res.json({ success: true });
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to retweet:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
-app.delete('/api/tweets/:id/retweet', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.delete('/api/tweets/:id/retweet', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const { id } = req.params;
-        const deleted = await (0, db_1.default)('retweets').where({ user_id: decoded.id, tweet_id: id }).del();
+        const deleted = await (0, db_1.default)('retweets').where({ user_id: user.id, tweet_id: id }).del();
         if (deleted) {
             (0, queue_1.sendToQueue)('engagement', { tweet_id: id, type: 'retweet', action: 'dec' });
         }
         res.json({ success: true });
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to unretweet:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 // THREADS (Get tweet and its replies)
@@ -459,18 +575,15 @@ app.get('/api/tweets/:id', async (req, res) => {
         res.json({ tweet, replies });
     }
     catch (err) {
+        console.error('Failed to get tweet thread:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
 // PERSONALIZED FEED
-app.get('/api/feed', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.get('/api/feed', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
-        const currentUserId = decoded.id;
+        const user = req.user;
+        const currentUserId = user.id;
         const cacheKey = `feed_${currentUserId}`;
         const cachedFeed = await cache_1.default.get(cacheKey);
         let tweetIds = [];
@@ -489,8 +602,12 @@ app.get('/api/feed', async (req, res) => {
         }
         const tweets = await (0, db_1.default)('tweets')
             .join('users', 'tweets.user_id', 'users.id')
-            .join('follows', 'tweets.user_id', 'follows.following_id')
-            .where('follows.follower_id', currentUserId)
+            .leftJoin('follows', 'tweets.user_id', 'follows.following_id')
+            .where(function () {
+            this.where('follows.follower_id', currentUserId)
+                .orWhere('tweets.user_id', currentUserId);
+        })
+            .whereNull('tweets.parent_tweet_id')
             .whereNull('tweets.deleted_at')
             .select('tweets.*', 'users.username', 'users.display_name')
             .select(db_1.default.raw('EXISTS(SELECT 1 FROM likes WHERE user_id = ? AND tweet_id = tweets.id) as has_liked', [currentUserId]), db_1.default.raw('EXISTS(SELECT 1 FROM retweets WHERE user_id = ? AND tweet_id = tweets.id) as has_retweeted', [currentUserId]))
@@ -503,133 +620,116 @@ app.get('/api/feed', async (req, res) => {
         res.json(tweets);
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to get feed:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 // FOLLOWS
-app.post('/api/follow/:username', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.post('/api/follow/:username', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const { username } = req.params;
         const userToFollow = await (0, db_1.default)('users').where('username', username).first();
         if (!userToFollow)
             return res.status(404).json({ error: 'User not found' });
-        if (userToFollow.id === decoded.id)
+        if (userToFollow.id === user.id)
             return res.status(400).json({ error: 'Cannot follow yourself' });
         await (0, db_1.default)('follows').insert({
-            follower_id: decoded.id,
+            follower_id: user.id,
             following_id: userToFollow.id
         }).onConflict(['follower_id', 'following_id']).ignore();
         // Trigger notification
-        (0, queue_1.sendToQueue)('notifications', { user_id: userToFollow.id, from_user_id: decoded.id, type: 'follow' });
+        (0, queue_1.sendToQueue)('notifications', { user_id: userToFollow.id, from_user_id: user.id, type: 'follow' });
         res.status(200).json({ success: true });
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to follow user:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
-app.delete('/api/follow/:username', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.delete('/api/follow/:username', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const { username } = req.params;
         const userToUnfollow = await (0, db_1.default)('users').where('username', username).first();
         if (!userToUnfollow)
             return res.status(404).json({ error: 'User not found' });
         await (0, db_1.default)('follows')
-            .where({ follower_id: decoded.id, following_id: userToUnfollow.id })
+            .where({ follower_id: user.id, following_id: userToUnfollow.id })
             .del();
         res.status(200).json({ success: true });
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to unfollow user:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 // RELATIONSHIPS (Blocks & Mutes)
-app.post('/api/users/:username/block', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.post('/api/users/:username/block', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const { username } = req.params;
         const userToBlock = await (0, db_1.default)('users').where('username', username).first();
         if (!userToBlock)
             return res.status(404).json({ error: 'User not found' });
-        if (userToBlock.id === decoded.id)
+        if (userToBlock.id === user.id)
             return res.status(400).json({ error: 'Cannot block yourself' });
-        await (0, db_1.default)('blocks').insert({ blocker_id: decoded.id, blocked_id: userToBlock.id })
+        await (0, db_1.default)('blocks').insert({ blocker_id: user.id, blocked_id: userToBlock.id })
             .onConflict(['blocker_id', 'blocked_id']).ignore();
         // Auto-unfollow both ways
-        await (0, db_1.default)('follows').where({ follower_id: decoded.id, following_id: userToBlock.id }).del();
-        await (0, db_1.default)('follows').where({ follower_id: userToBlock.id, following_id: decoded.id }).del();
+        await (0, db_1.default)('follows').where({ follower_id: user.id, following_id: userToBlock.id }).del();
+        await (0, db_1.default)('follows').where({ follower_id: userToBlock.id, following_id: user.id }).del();
         res.json({ success: true });
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to block user:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
-app.delete('/api/users/:username/block', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.delete('/api/users/:username/block', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const { username } = req.params;
         const userToUnblock = await (0, db_1.default)('users').where('username', username).first();
         if (!userToUnblock)
             return res.status(404).json({ error: 'User not found' });
-        await (0, db_1.default)('blocks').where({ blocker_id: decoded.id, blocked_id: userToUnblock.id }).del();
+        await (0, db_1.default)('blocks').where({ blocker_id: user.id, blocked_id: userToUnblock.id }).del();
         res.json({ success: true });
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to unblock user:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
-app.post('/api/users/:username/mute', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.post('/api/users/:username/mute', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const { username } = req.params;
         const userToMute = await (0, db_1.default)('users').where('username', username).first();
         if (!userToMute)
             return res.status(404).json({ error: 'User not found' });
-        await (0, db_1.default)('mutes').insert({ muter_id: decoded.id, muted_id: userToMute.id })
+        await (0, db_1.default)('mutes').insert({ muter_id: user.id, muted_id: userToMute.id })
             .onConflict(['muter_id', 'muted_id']).ignore();
         res.json({ success: true });
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to mute user:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
-app.delete('/api/users/:username/mute', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.delete('/api/users/:username/mute', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const { username } = req.params;
         const userToUnmute = await (0, db_1.default)('users').where('username', username).first();
         if (!userToUnmute)
             return res.status(404).json({ error: 'User not found' });
-        await (0, db_1.default)('mutes').where({ muter_id: decoded.id, muted_id: userToUnmute.id }).del();
+        await (0, db_1.default)('mutes').where({ muter_id: user.id, muted_id: userToUnmute.id }).del();
         res.json({ success: true });
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to unmute user:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 app.get('/api/users/:username', async (req, res) => {
@@ -671,41 +771,35 @@ app.get('/api/users/:username', async (req, res) => {
         res.json({ ...user, followers_count: follows?.count, following_count: following?.count });
     }
     catch (err) {
+        console.error('Failed to get user profile:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
 // NOTIFICATIONS
-app.get('/api/notifications', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.get('/api/notifications', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const user = req.user;
         const notifications = await (0, db_1.default)('notifications')
             .join('users', 'notifications.from_user_id', 'users.id')
             .leftJoin('tweets', 'notifications.tweet_id', 'tweets.id')
-            .where('notifications.user_id', decoded.id)
+            .where('notifications.user_id', user.id)
             // Filter out notifications from blocked or muted users
-            .whereNotExists(db_1.default.select(1).from('blocks').whereRaw('blocker_id = ? AND blocked_id = notifications.from_user_id', [decoded.id]))
-            .whereNotExists(db_1.default.select(1).from('mutes').whereRaw('muter_id = ? AND muted_id = notifications.from_user_id', [decoded.id]))
+            .whereNotExists(db_1.default.select(1).from('blocks').whereRaw('blocker_id = ? AND blocked_id = notifications.from_user_id', [user.id]))
+            .whereNotExists(db_1.default.select(1).from('mutes').whereRaw('muter_id = ? AND muted_id = notifications.from_user_id', [user.id]))
             .select('notifications.*', 'users.username as from_username', 'tweets.content as tweet_content')
             .orderBy('notifications.created_at', 'desc')
             .limit(50);
         res.json(notifications);
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to get notifications:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 // DIRECT MESSAGES
-app.post('/api/messages', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.post('/api/messages', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const userAuth = req.user;
         const { receiver_username, content } = req.body;
         const receiver = await (0, db_1.default)('users').where('username', receiver_username).first();
         if (!receiver)
@@ -713,30 +807,27 @@ app.post('/api/messages', async (req, res) => {
         // Check for block
         const block = await (0, db_1.default)('blocks')
             .where(function () {
-            this.where({ blocker_id: decoded.id, blocked_id: receiver.id })
-                .orWhere({ blocker_id: receiver.id, blocked_id: decoded.id });
+            this.where({ blocker_id: userAuth.id, blocked_id: receiver.id })
+                .orWhere({ blocker_id: receiver.id, blocked_id: userAuth.id });
         }).first();
         if (block)
             return res.status(403).json({ error: 'Cannot message this user' });
         const [message] = await (0, db_1.default)('messages').insert({
-            sender_id: decoded.id,
+            sender_id: userAuth.id,
             receiver_id: receiver.id,
             content
         }).returning('*');
-        (0, queue_1.sendToQueue)('direct_messages', { message_id: message.id, sender_id: decoded.id, receiver_id: receiver.id });
+        (0, queue_1.sendToQueue)('direct_messages', { message_id: message.id, sender_id: userAuth.id, receiver_id: receiver.id });
         res.status(201).json(message);
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to send message:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
-app.get('/api/messages', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.get('/api/messages', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const userAuth = req.user;
         // Get unique conversations (users the current user has messaged or received messages from)
         const conversations = await db_1.default.raw(`
       SELECT DISTINCT ON (contact_id)
@@ -758,7 +849,7 @@ app.get('/api/messages', async (req, res) => {
       ) m
       JOIN users u ON u.id = m.contact_id
       ORDER BY contact_id, last_message_at DESC
-    `, [decoded.id, decoded.id, decoded.id, decoded.id, decoded.id, decoded.id, decoded.id]);
+    `, [userAuth.id, userAuth.id, userAuth.id, userAuth.id, userAuth.id, userAuth.id, userAuth.id]);
         res.json(conversations.rows);
     }
     catch (err) {
@@ -766,21 +857,17 @@ app.get('/api/messages', async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 });
-app.get('/api/messages/:username', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.get('/api/messages/:username', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const userAuth = req.user;
         const { username } = req.params;
         const contact = await (0, db_1.default)('users').where('username', username).first();
         if (!contact)
             return res.status(404).json({ error: 'User not found' });
         const messages = await (0, db_1.default)('messages')
             .where(function () {
-            this.where({ sender_id: decoded.id, receiver_id: contact.id })
-                .orWhere({ sender_id: contact.id, receiver_id: decoded.id });
+            this.where({ sender_id: userAuth.id, receiver_id: contact.id })
+                .orWhere({ sender_id: contact.id, receiver_id: userAuth.id });
         })
             .orderBy('created_at', 'asc')
             .limit(100);
@@ -790,7 +877,8 @@ app.get('/api/messages/:username', async (req, res) => {
         });
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to get messages:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 app.get('/api/realtime/stream', async (req, res) => {
@@ -808,7 +896,11 @@ app.get('/api/realtime/stream', async (req, res) => {
         });
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        if (err instanceof jsonwebtoken_1.default.JsonWebTokenError) {
+            return res.status(401).json({ error: 'Invalid token' });
+        }
+        console.error('Realtime stream error:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 // ADMIN ENDPOINTS
@@ -923,6 +1015,7 @@ app.post('/api/auth/signup', (0, rateLimiter_1.rateLimiter)(60, 5, 'auth'), asyn
         if (err.code === '23505') {
             return res.status(409).json({ error: 'Username or email already exists' });
         }
+        console.error('Signup error:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -950,18 +1043,15 @@ app.post('/api/auth/login', (0, rateLimiter_1.rateLimiter)(60, 5, 'auth'), async
         });
     }
     catch (err) {
+        console.error('Login error:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
 // ME (Get current user)
 // PROFILE
-app.patch('/api/auth/profile', upload.single('avatar'), async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.patch('/api/auth/profile', authenticate, upload.single('avatar'), async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const userAuth = req.user;
         const { display_name, bio } = req.body;
         let avatar_url = undefined;
         if (req.file) {
@@ -978,33 +1068,29 @@ app.patch('/api/auth/profile', upload.single('avatar'), async (req, res) => {
             return res.status(400).json({ error: 'No data provided for update' });
         }
         const [user] = await (0, db_1.default)('users')
-            .where('id', decoded.id)
+            .where('id', userAuth.id)
             .update(updateData)
             .returning(['id', 'username', 'display_name', 'bio', 'avatar_url']);
         // Invalidate cache
-        const cacheKey = `user_profile_${decoded.id}`;
+        const cacheKey = `user_profile_${userAuth.id}`;
         await cache_1.default.delete(cacheKey);
         res.json(user);
     }
     catch (err) {
         console.error('Failed to update profile:', err);
-        res.status(401).json({ error: 'Invalid token' });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
-app.get('/api/auth/me', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader)
-        return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
+app.get('/api/auth/me', authenticate, async (req, res) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const userAuth = req.user;
         // Check cache first
-        const cacheKey = `user_profile_${decoded.id}`;
+        const cacheKey = `user_profile_${userAuth.id}`;
         const cachedValue = await cache_1.default.get(cacheKey);
         if (cachedValue && cachedValue.value) {
             return res.json(JSON.parse(cachedValue.value.toString()));
         }
-        const user = await (0, db_1.default)('users').where('id', decoded.id).first();
+        const user = await (0, db_1.default)('users').where('id', userAuth.id).first();
         if (!user)
             return res.status(404).json({ error: 'User not found' });
         const userProfile = {
@@ -1020,7 +1106,8 @@ app.get('/api/auth/me', async (req, res) => {
         res.json(userProfile);
     }
     catch (err) {
-        res.status(401).json({ error: 'Invalid token' });
+        console.error('Failed to get current user:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 exports.default = app;

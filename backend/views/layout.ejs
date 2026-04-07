@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %> / Twit</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <header class="header">
+        <a href="/" class="logo">Twit</a>
+        <% if (user) { %>
+            <div class="userInfo">
+                <div class="linkWrapper">
+                    <a href="/notifications" class="link">Notifications</a>
+                    <% if (notificationsCount > 0) { %>
+                        <span class="badge"><%= notificationsCount %></span>
+                    <% } %>
+                </div>
+                <a href="/messages" class="link">Messages</a>
+                <a href="/bookmarks" class="link">Bookmarks</a>
+                <a href="/lists" class="link">Lists</a>
+                <% if (user.is_admin) { %>
+                    <a href="/admin" class="link" style="color: #1d9bf0; font-weight: bold;">Admin</a>
+                <% } %>
+                <span>@<%= user.username %></span>
+                <form action="/auth/logout" method="POST" style="display: inline;">
+                    <button type="submit" class="logoutLink">Log Out</button>
+                </form>
+            </div>
+        <% } %>
+    </header>
+
+    <div class="layout">
+        <main class="main">
+            <%- body %>
+        </main>
+
+        <aside class="sidebar">
+            <div class="searchBox">
+                <form action="/search" method="GET">
+                    <input type="text" name="q" placeholder="Search Twit" class="searchInput" required>
+                </form>
+            </div>
+
+            <div class="trendingCard">
+                <h2>What's happening</h2>
+                <% if (trending && trending.length > 0) { %>
+                    <% trending.forEach(trend => { %>
+                        <a href="/search?q=<%= trend.tag %>" class="trendItem">
+                            <span class="trendName">#<%= trend.tag %></span>
+                            <span class="trendCount"><%= trend.tweet_count %> Tweets</span>
+                        </a>
+                    <% }) %>
+                <% } else { %>
+                    <p style="color: #71767b; font-size: 15px;">No trends yet.</p>
+                <% } %>
+            </div>
+        </aside>
+    </div>
+
+    <footer class="footer">
+        <p>&copy; 2026 Twit. Dark Web Friendly.</p>
+    </footer>
+</body>
+</html>

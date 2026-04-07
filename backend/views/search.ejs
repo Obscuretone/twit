@@ -1,0 +1,32 @@
+<h2>Search results for "<%= q %>"</h2>
+
+<div class="tweetList" style="margin-top: 24px;">
+    <% if (results && results.length > 0) { %>
+        <% results.forEach(tweet => { %>
+            <div class="tweetCard">
+                <div class="avatar"></div>
+                <div class="tweetMain">
+                    <div class="tweetHeader">
+                        <span class="displayName"><%= tweet.display_name %></span>
+                        <a href="/u/<%= tweet.username %>" class="username">@<%= tweet.username %></a>
+                        <span class="time">· <%= new Date(tweet.created_at).toLocaleDateString() %></span>
+                    </div>
+                    <a href="/tweet/<%= tweet.id %>" class="tweetContent" style="display: block; color: inherit; text-decoration: none;">
+                        <%= tweet.content %>
+                    </a>
+                    <div class="tweetEngagement">
+                        <form action="/tweets/<%= tweet.id %>/like" method="POST">
+                            <button type="submit" class="engagementButton">Like <%= tweet.like_count %></button>
+                        </form>
+                        <form action="/tweets/<%= tweet.id %>/retweet" method="POST">
+                            <button type="submit" class="engagementButton">Retweet <%= tweet.retweet_count %></button>
+                        </form>
+                        <a href="/tweet/<%= tweet.id %>" class="engagementButton">Reply <%= tweet.reply_count %></a>
+                    </div>
+                </div>
+            </div>
+        <% }) %>
+    <% } else { %>
+        <p class="noTweets">No results found for your search.</p>
+    <% } %>
+</div>

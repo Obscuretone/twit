@@ -1,13 +1,34 @@
-<form action="/auth/signup" method="POST" class="form">
-    <h2>Create your account</h2>
-    <% if (error) { %>
-        <p class="errorMessage"><%= error %></p>
-    <% } %>
-    <input type="text" name="username" placeholder="Username" required>
-    <input type="email" name="email" placeholder="Email" required>
-    <input type="password" name="password" placeholder="Password" required>
-    <button type="submit">Sign Up</button>
-    <p style="font-size: 14px; text-align: center; margin-top: 16px;">
-        Already have an account? <a href="/login" style="color: #1d9bf0;">Log in</a>
-    </p>
-</form>
+<div class="p-5">
+    <div class="row justify-content-center mt-5">
+        <div class="col-md-10">
+            <h1 class="display-5 fw-bold mb-4">Join Twit today</h1>
+            
+            <% if (error) { %>
+                <div class="alert alert-danger" role="alert">
+                    <%= error %>
+                </div>
+            <% } %>
+
+            <form action="/auth/signup" method="POST" class="d-grid gap-3">
+                <div class="form-floating mb-1">
+                    <input type="text" name="username" class="form-control bg-black border-secondary text-white" id="floatingUsername" placeholder="Username" required>
+                    <label for="floatingUsername" class="text-secondary">Username</label>
+                </div>
+                <div class="form-floating mb-1">
+                    <input type="email" name="email" class="form-control bg-black border-secondary text-white" id="floatingEmail" placeholder="Email" required>
+                    <label for="floatingEmail" class="text-secondary">Email address</label>
+                </div>
+                <div class="form-floating mb-3">
+                    <input type="password" name="password" class="form-control bg-black border-secondary text-white" id="floatingPassword" placeholder="Password" required>
+                    <label for="floatingPassword" class="text-secondary">Password</label>
+                </div>
+                
+                <button type="submit" class="btn btn-primary btn-lg rounded-pill py-3">Sign Up</button>
+                
+                <p class="text-center mt-4 text-secondary">
+                    Already have an account? <a href="/login" class="text-primary text-decoration-none">Log in</a>
+                </p>
+            </form>
+        </div>
+    </div>
+</div>

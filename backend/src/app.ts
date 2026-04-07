@@ -7,7 +7,6 @@ import cache from './cache';
 import { sendToQueue } from './queue';
 import multer from 'multer';
 import { uploadFile } from './storage';
-import { realtimeBroadcaster } from './realtime';
 import { rateLimiter } from './middleware/rateLimiter';
 import { spamDetector } from './middleware/spamDetector';
 import cookieParser from 'cookie-parser';
@@ -1031,31 +1030,6 @@ app.get('/api/messages/:username', authenticate, async (req, res) => {
 
   } catch (err) {
     console.error('Failed to get messages:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.get('/api/realtime/stream', async (req, res) => {
-  const authHeader = req.headers.authorization;
-  const queryToken = req.query.token as string;
-  
-  if (!authHeader && !queryToken) return res.status(401).json({ error: 'Unauthorized' });
-
-  const token = authHeader ? authHeader.split(' ')[1]! : queryToken;
-  try {
-    const decoded: any = jwt.verify(token, JWT_SECRET);
-    const userId = decoded.id;
-
-    const clientId = realtimeBroadcaster.addClient(userId, res);
-
-    req.on('close', () => {
-      realtimeBroadcaster.removeClient(clientId);
-    });
-  } catch (err) {
-    if (err instanceof jwt.JsonWebTokenError) {
-      return res.status(401).json({ error: 'Invalid token' });
-    }
-    console.error('Realtime stream error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -145,6 +145,12 @@ app.get('/login', optionalAuthenticate, async (req, res) => {
   res.render('login', { ...data, title: 'Login', error: req.query.error });
 });
 
+app.get('/signup', optionalAuthenticate, async (req, res) => {
+  if ((req as any).user) return res.redirect('/');
+  const data = await getViewData(req);
+  res.render('signup', { ...data, title: 'Sign Up', error: req.query.error });
+});
+
 app.get('/tweet/:id', optionalAuthenticate, async (req, res) => {
   const { id } = req.params;
   const data = await getViewData(req);

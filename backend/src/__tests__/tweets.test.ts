@@ -41,15 +41,15 @@ jest.mock('../cache', () => ({
 const JWT_SECRET = 'supersecretkey_change_in_prod';
 const token = jwt.sign({ id: 'user-uuid-123', username: 'testuser' }, JWT_SECRET);
 
-describe('Tweets API', () => {
+describe('Tweets Flow', () => {
   it('should create a tweet and send mention to queue', async () => {
     const res = await request(app)
-      .post('/api/tweets')
+      .post('/tweets')
       .set('Authorization', `Bearer ${token}`)
       .send({ content: 'hello @mentioneduser' });
     
-    expect(res.status).toBe(201);
-    expect(res.body.content).toBe('hello @testuser'); // Mock returns this
+    expect(res.status).toBe(302);
+    expect(res.header.location).toBe('/');
     expect(queue.sendToQueue).toHaveBeenCalledWith('mentions', expect.objectContaining({ username: 'mentioneduser' }));
   });
 

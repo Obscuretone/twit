@@ -1,0 +1,26 @@
+<div class="profileInfo" style="padding: 16px;">
+    <h1><%= profile.display_name %></h1>
+    <p class="username">@<%= profile.username %></p>
+    <p class="bio" style="margin-top: 12px;"><%= profile.bio || 'No bio yet.' %></p>
+    <p class="time" style="margin-top: 12px;">Joined <%= new Date(profile.created_at).toLocaleDateString() %></p>
+</div>
+
+<div class="tweetList" style="border-top: 1px solid var(--gray-alpha-10); margin-top: 16px;">
+    <% if (tweets && tweets.length > 0) { %>
+        <% tweets.forEach(tweet => { %>
+            <div class="tweetCard">
+                <div class="avatar"></div>
+                <div class="tweetMain">
+                    <div class="tweetHeader">
+                        <span class="displayName"><%= tweet.display_name %></span>
+                        <span class="username">@<%= tweet.username %></span>
+                        <span class="time">· <%= new Date(tweet.created_at).toLocaleDateString() %></span>
+                    </div>
+                    <div class="tweetContent"><%= tweet.content %></div>
+                </div>
+            </div>
+        <% }) %>
+    <% } else { %>
+        <p class="noTweets">No tweets from this user yet.</p>
+    <% } %>
+</div>

@@ -2,6 +2,7 @@ import app from './app';
 import { connectQueue } from './queue';
 import { startWorker } from './worker';
 import { initS3 } from './storage';
+import { realtimeBroadcaster } from './realtime';
 
 const PORT = process.env.PORT || 4000;
 
@@ -22,6 +23,9 @@ async function start() {
 
   if (!rabbitmqConnected) {
     console.error('Failed to connect to RabbitMQ after multiple attempts.');
+  } else {
+    // Initialize realtime broadcaster now that RabbitMQ is ready
+    await realtimeBroadcaster.init();
   }
 
   await initS3();

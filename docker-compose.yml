@@ -40,13 +40,13 @@ services:
     volumes:
       - minio_data:/data
 
-  # Express Backend
+  # Express Backend (Server-Rendered HTML)
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "4000:4000"
+      - "3000:4000"
     environment:
       - DATABASE_URL=postgresql://root:rootpassword@postgres:5432/twit
       - MEMCACHED_HOST=memcached:11211
@@ -61,21 +61,6 @@ services:
       - postgres
       - memcached
       - rabbitmq
-      - minio
-
-  # Next.js Frontend
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:4000
-      - API_URL=http://backend:4000
-      - NEXT_PUBLIC_S3_PUBLIC_URL=http://localhost:9000/twit-media
-    depends_on:
-      - backend
       - minio
 
 volumes:

@@ -1,0 +1,50 @@
+<div class="tweetDetail">
+    <div class="tweetHeader">
+        <div class="avatar"></div>
+        <div class="tweetMain">
+            <div class="displayName"><%= tweet.display_name %></div>
+            <a href="/u/<%= tweet.username %>" class="username">@<%= tweet.username %></a>
+        </div>
+    </div>
+    <div class="tweetContent" style="font-size: 23px; margin-top: 16px;"><%= tweet.content %></div>
+    <div class="time" style="margin-top: 16px;"><%= new Date(tweet.created_at).toLocaleString() %></div>
+    <div class="tweetEngagement" style="margin-top: 16px; border-top: 1px solid var(--gray-alpha-10); padding-top: 16px;">
+        <form action="/tweets/<%= tweet.id %>/like" method="POST">
+            <button type="submit" class="engagementButton <%= tweet.has_liked ? 'liked' : '' %>">
+                Like <%= tweet.like_count %>
+            </button>
+        </form>
+        <form action="/tweets/<%= tweet.id %>/retweet" method="POST">
+            <button type="submit" class="engagementButton <%= tweet.has_retweeted ? 'retweeted' : '' %>">
+                Retweet <%= tweet.retweet_count %>
+            </button>
+        </form>
+    </div>
+</div>
+
+<% if (user) { %>
+    <form action="/tweets/<%= tweet.id %>/reply" method="POST" class="tweetForm">
+        <textarea name="content" placeholder="Post your reply" class="textarea" required></textarea>
+        <div class="tweetFormActions">
+            <button type="submit" class="tweetButton">Reply</button>
+        </div>
+    </form>
+<% } %>
+
+<div class="tweetList">
+    <% if (replies && replies.length > 0) { %>
+        <% replies.forEach(reply => { %>
+            <div class="tweetCard">
+                <div class="avatar"></div>
+                <div class="tweetMain">
+                    <div class="tweetHeader">
+                        <span class="displayName"><%= reply.display_name %></span>
+                        <span class="username">@<%= reply.username %></span>
+                        <span class="time">· <%= new Date(reply.created_at).toLocaleDateString() %></span>
+                    </div>
+                    <div class="tweetContent"><%= reply.content %></div>
+                </div>
+            </div>
+        <% }) %>
+    <% } %>
+</div>

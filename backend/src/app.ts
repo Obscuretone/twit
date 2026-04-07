@@ -21,6 +21,7 @@ const JWT_SECRET: string = process.env.JWT_SECRET || 'supersecretkey_change_in_p
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, '../views'));
 app.use(express.static(path.join(__dirname, '../public')));
+app.use('/vendor/bootstrap', express.static(path.join(__dirname, '../node_modules/bootstrap/dist')));
 app.use(cookieParser());
 
 const isAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -97,7 +98,7 @@ const getViewData = async (req: express.Request) => {
   const trending = await db('hashtags').orderBy('tweet_count', 'desc').limit(10);
   let notificationsCount = 0;
   if (user) {
-    const result = await db('notifications').where({ user_id: user.id, is_read: false }).count('id as count').first();
+    const result = await db('notifications').where({ user_id: user.id, read: false }).count('id as count').first();
     notificationsCount = parseInt((result?.count as string) || '0');
   }
   return { user, trending, notificationsCount, title: 'Twit' };

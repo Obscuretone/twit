@@ -1,67 +1,96 @@
 <% if (user) { %>
-    <form action="/tweets" method="POST" enctype="multipart/form-data" class="tweetForm">
-        <textarea name="content" placeholder="What's happening?" class="textarea" required maxlength="280"></textarea>
-        <div class="tweetFormActions">
-            <input type="file" name="media" class="fileInput">
-            <button type="submit" class="tweetButton">Tweet</button>
-        </div>
-    </form>
+    <!-- Tweet Creation Area -->
+    <div class="p-3 border-bottom border-secondary">
+        <form action="/tweets" method="POST" enctype="multipart/form-data">
+            <div class="d-flex gap-3">
+                <div class="flex-shrink-0">
+                    <div class="rounded-circle bg-secondary" style="width: 48px; height: 48px;"></div>
+                </div>
+                <div class="flex-grow-1">
+                    <textarea name="content" class="form-control bg-transparent border-0 text-white fs-5 p-0 mb-2 shadow-none" placeholder="What's happening?" required maxlength="280" rows="3" style="resize: none;"></textarea>
+                    
+                    <div class="d-flex justify-content-between align-items-center pt-2 border-top border-secondary">
+                        <div class="text-primary small">
+                            <label class="btn btn-sm btn-outline-primary rounded-pill px-3" style="cursor: pointer;">
+                                Media <input type="file" name="media" hidden>
+                            </label>
+                        </div>
+                        <button type="submit" class="btn btn-primary px-4">Tweet</button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
 
-    <div class="tweetList">
+    <!-- Feed -->
+    <div class="tweet-list">
         <% if (tweets && tweets.length > 0) { %>
             <% tweets.forEach(tweet => { %>
-                <div class="tweetCard">
-                    <div class="avatar"></div>
-                    <div class="tweetMain">
-                        <div class="tweetHeader">
-                            <span class="displayName"><%= tweet.display_name %></span>
-                            <a href="/u/<%= tweet.username %>" class="username">@<%= tweet.username %></a>
-                            <span class="time">· <%= new Date(tweet.created_at).toLocaleDateString() %></span>
+                <div class="tweet-card">
+                    <div class="d-flex gap-3">
+                        <div class="flex-shrink-0">
+                            <div class="rounded-circle bg-secondary" style="width: 48px; height: 48px;"></div>
                         </div>
-                        <a href="/tweet/<%= tweet.id %>" class="tweetContent" style="display: block; color: inherit; text-decoration: none;">
-                            <%= tweet.content %>
-                        </a>
-                        <% if (tweet.media_url) { %>
-                            <div class="tweetMedia">
-                                <img src="/uploads/<%= tweet.media_url %>" class="mediaImage">
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-items-center gap-1 mb-1">
+                                <span class="fw-bold"><%= tweet.display_name %></span>
+                                <a href="/u/<%= tweet.username %>" class="text-secondary text-decoration-none small">@<%= tweet.username %></a>
+                                <span class="text-secondary small">· <%= new Date(tweet.created_at).toLocaleDateString() %></span>
                             </div>
-                        <% } %>
-                        <div class="tweetEngagement">
-                            <div class="engagementItem">
-                                <form action="/tweets/<%= tweet.id %>/like" method="POST">
-                                    <button type="submit" class="engagementButton <%= tweet.has_liked ? 'liked' : '' %>">
-                                        Like <%= tweet.like_count %>
+                            
+                            <a href="/tweet/<%= tweet.id %>" class="text-white text-decoration-none d-block mb-2">
+                                <p class="mb-2" style="white-space: pre-wrap;"><%= tweet.content %></p>
+                            </a>
+
+                            <% if (tweet.media_url) { %>
+                                <div class="mb-2 rounded-4 overflow-hidden border border-secondary">
+                                    <img src="/uploads/<%= tweet.media_url %>" class="img-fluid w-100" alt="Tweet media">
+                                </div>
+                            <% } %>
+
+                            <div class="d-flex justify-content-between text-secondary" style="max-width: 425px;">
+                                <form action="/tweets/<%= tweet.id %>/like" method="POST" class="d-inline">
+                                    <button type="submit" class="btn btn-link btn-sm text-secondary text-decoration-none p-0">
+                                        <span class="<%= tweet.has_liked ? 'text-danger' : '' %>">
+                                            ❤️ <%= tweet.like_count || 0 %>
+                                        </span>
                                     </button>
                                 </form>
-                            </div>
-                            <div class="engagementItem">
-                                <form action="/tweets/<%= tweet.id %>/retweet" method="POST">
-                                    <button type="submit" class="engagementButton <%= tweet.has_retweeted ? 'retweeted' : '' %>">
-                                        Retweet <%= tweet.retweet_count %>
+                                <form action="/tweets/<%= tweet.id %>/retweet" method="POST" class="d-inline">
+                                    <button type="submit" class="btn btn-link btn-sm text-secondary text-decoration-none p-0">
+                                        <span class="<%= tweet.has_retweeted ? 'text-success' : '' %>">
+                                            🔁 <%= tweet.retweet_count || 0 %>
+                                        </span>
                                     </button>
                                 </form>
-                            </div>
-                            <div class="engagementItem">
-                                <a href="/tweet/<%= tweet.id %>" class="engagementButton">Reply <%= tweet.reply_count %></a>
+                                <a href="/tweet/<%= tweet.id %>" class="btn btn-link btn-sm text-secondary text-decoration-none p-0">
+                                    💬 <%= tweet.reply_count || 0 %>
+                                </a>
                             </div>
                         </div>
                     </div>
                 </div>
             <% }) %>
         <% } else { %>
-            <p class="noTweets">No tweets to show.</p>
+            <div class="p-5 text-center text-secondary">
+                <p>No tweets to show.</p>
+            </div>
         <% } %>
     </div>
 <% } else { %>
-    <div class="hero">
-        <div class="twitHeader">
-            <h1>Welcome to Twit</h1>
-            <p>The massively scalable, microblogging platform.</p>
+    <!-- Hero / Welcome -->
+    <div class="p-5 text-center mt-5">
+        <h1 class="display-3 fw-bold mb-4">Happening now</h1>
+        <h2 class="h3 mb-5">Join Twit today.</h2>
+        
+        <div class="d-grid gap-3 col-md-6 mx-auto">
+            <a href="/signup" class="btn btn-primary btn-lg rounded-pill py-3">Create Account</a>
+            <div class="text-secondary my-2">or</div>
+            <a href="/login" class="btn btn-outline-light btn-lg rounded-pill py-3">Sign In</a>
         </div>
-
-        <div class="authBox">
-            <a href="/signup" class="signupButton">Create Account</a>
-            <a href="/login" class="loginButton">Sign In</a>
-        </div>
+        
+        <p class="mt-5 text-secondary small">
+            Massively scalable. JS-Free. Pure HTML.
+        </p>
     </div>
 <% } %>

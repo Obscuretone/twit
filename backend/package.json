@@ -17,6 +17,7 @@
     "@types/multer": "^2.1.0",
     "amqplib": "^0.10.9",
     "bcryptjs": "^3.0.3",
+    "bootstrap": "^5.3.8",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",

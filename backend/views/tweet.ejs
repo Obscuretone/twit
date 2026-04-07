@@ -1,48 +1,80 @@
-<div class="tweetDetail">
-    <div class="tweetHeader">
-        <div class="avatar"></div>
-        <div class="tweetMain">
-            <div class="displayName"><%= tweet.display_name %></div>
-            <a href="/u/<%= tweet.username %>" class="username">@<%= tweet.username %></a>
+<div class="p-3 border-bottom border-secondary">
+    <div class="d-flex gap-3 mb-3">
+        <div class="flex-shrink-0">
+            <div class="rounded-circle bg-secondary" style="width: 48px; height: 48px;"></div>
+        </div>
+        <div class="flex-grow-1">
+            <div class="fw-bold fs-5"><%= tweet.display_name %></div>
+            <a href="/u/<%= tweet.username %>" class="text-secondary text-decoration-none">@<%= tweet.username %></a>
         </div>
     </div>
-    <div class="tweetContent" style="font-size: 23px; margin-top: 16px;"><%= tweet.content %></div>
-    <div class="time" style="margin-top: 16px;"><%= new Date(tweet.created_at).toLocaleString() %></div>
-    <div class="tweetEngagement" style="margin-top: 16px; border-top: 1px solid var(--gray-alpha-10); padding-top: 16px;">
-        <form action="/tweets/<%= tweet.id %>/like" method="POST">
-            <button type="submit" class="engagementButton <%= tweet.has_liked ? 'liked' : '' %>">
-                Like <%= tweet.like_count %>
+
+    <div class="fs-4 text-white mb-3" style="white-space: pre-wrap;"><%= tweet.content %></div>
+
+    <% if (tweet.media_url) { %>
+        <div class="mb-3 rounded-4 overflow-hidden border border-secondary">
+            <img src="/uploads/<%= tweet.media_url %>" class="img-fluid w-100" alt="Tweet media">
+        </div>
+    <% } %>
+
+    <div class="text-secondary pb-3 border-bottom border-secondary">
+        <%= new Date(tweet.created_at).toLocaleString() %>
+    </div>
+
+    <div class="d-flex justify-content-around py-3 border-bottom border-secondary">
+        <form action="/tweets/<%= tweet.id %>/like" method="POST" class="d-inline">
+            <button type="submit" class="btn btn-link text-secondary text-decoration-none">
+                <span class="<%= tweet.has_liked ? 'text-danger' : '' %>">
+                    ❤️ <%= tweet.like_count || 0 %>
+                </span>
             </button>
         </form>
-        <form action="/tweets/<%= tweet.id %>/retweet" method="POST">
-            <button type="submit" class="engagementButton <%= tweet.has_retweeted ? 'retweeted' : '' %>">
-                Retweet <%= tweet.retweet_count %>
+        <form action="/tweets/<%= tweet.id %>/retweet" method="POST" class="d-inline">
+            <button type="submit" class="btn btn-link text-secondary text-decoration-none">
+                <span class="<%= tweet.has_retweeted ? 'text-success' : '' %>">
+                    🔁 <%= tweet.retweet_count || 0 %>
+                </span>
             </button>
         </form>
     </div>
 </div>
 
 <% if (user) { %>
-    <form action="/tweets/<%= tweet.id %>/reply" method="POST" class="tweetForm">
-        <textarea name="content" placeholder="Post your reply" class="textarea" required></textarea>
-        <div class="tweetFormActions">
-            <button type="submit" class="tweetButton">Reply</button>
-        </div>
-    </form>
+    <!-- Reply Form -->
+    <div class="p-3 border-bottom border-secondary">
+        <form action="/tweets/<%= tweet.id %>/reply" method="POST">
+            <div class="d-flex gap-3">
+                <div class="flex-shrink-0">
+                    <div class="rounded-circle bg-secondary" style="width: 40px; height: 40px;"></div>
+                </div>
+                <div class="flex-grow-1">
+                    <textarea name="content" class="form-control bg-transparent border-0 text-white fs-5 p-0 mb-2 shadow-none" placeholder="Post your reply" required rows="2" style="resize: none;"></textarea>
+                    <div class="text-end">
+                        <button type="submit" class="btn btn-primary px-4 btn-sm">Reply</button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
 <% } %>
 
-<div class="tweetList">
+<!-- Replies -->
+<div class="tweet-list">
     <% if (replies && replies.length > 0) { %>
         <% replies.forEach(reply => { %>
-            <div class="tweetCard">
-                <div class="avatar"></div>
-                <div class="tweetMain">
-                    <div class="tweetHeader">
-                        <span class="displayName"><%= reply.display_name %></span>
-                        <span class="username">@<%= reply.username %></span>
-                        <span class="time">· <%= new Date(reply.created_at).toLocaleDateString() %></span>
+            <div class="tweet-card">
+                <div class="d-flex gap-3">
+                    <div class="flex-shrink-0">
+                        <div class="rounded-circle bg-secondary" style="width: 48px; height: 48px;"></div>
                     </div>
-                    <div class="tweetContent"><%= reply.content %></div>
+                    <div class="flex-grow-1">
+                        <div class="d-flex align-items-center gap-1 mb-1">
+                            <span class="fw-bold"><%= reply.display_name %></span>
+                            <a href="/u/<%= reply.username %>" class="text-secondary text-decoration-none small">@<%= reply.username %></a>
+                            <span class="text-secondary small">· <%= new Date(reply.created_at).toLocaleDateString() %></span>
+                        </div>
+                        <p class="text-white mb-0" style="white-space: pre-wrap;"><%= reply.content %></p>
+                    </div>
                 </div>
             </div>
         <% }) %>

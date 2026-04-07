@@ -1,26 +1,55 @@
-<div class="profileInfo" style="padding: 16px;">
-    <h1><%= profile.display_name %></h1>
-    <p class="username">@<%= profile.username %></p>
-    <p class="bio" style="margin-top: 12px;"><%= profile.bio || 'No bio yet.' %></p>
-    <p class="time" style="margin-top: 12px;">Joined <%= new Date(profile.created_at).toLocaleDateString() %></p>
+<div class="p-4 border-bottom border-secondary">
+    <div class="d-flex align-items-end mb-4" style="margin-top: -50px;">
+        <div class="rounded-circle bg-secondary border border-5 border-black overflow-hidden" style="width: 134px; height: 134px;">
+            <% if (profile.avatar_url) { %>
+                <img src="/uploads/<%= profile.avatar_url %>" class="img-fluid" alt="Avatar">
+            <% } %>
+        </div>
+    </div>
+    
+    <div class="mb-3">
+        <h3 class="fw-bold mb-0 text-white"><%= profile.display_name %></h3>
+        <div class="text-secondary">@<%= profile.username %></div>
+    </div>
+
+    <% if (profile.bio) { %>
+        <p class="text-white mb-3" style="white-space: pre-wrap;"><%= profile.bio %></p>
+    <% } %>
+
+    <div class="d-flex gap-3 text-secondary small mb-3">
+        <span>📅 Joined <%= new Date(profile.created_at).toLocaleDateString() %></span>
+    </div>
+
+    <div class="d-flex gap-4 text-secondary small">
+        <span class="text-white fw-bold">0 <span class="text-secondary fw-normal">Following</span></span>
+        <span class="text-white fw-bold">0 <span class="text-secondary fw-normal">Followers</span></span>
+    </div>
 </div>
 
-<div class="tweetList" style="border-top: 1px solid var(--gray-alpha-10); margin-top: 16px;">
+<div class="tweet-list">
     <% if (tweets && tweets.length > 0) { %>
         <% tweets.forEach(tweet => { %>
-            <div class="tweetCard">
-                <div class="avatar"></div>
-                <div class="tweetMain">
-                    <div class="tweetHeader">
-                        <span class="displayName"><%= tweet.display_name %></span>
-                        <span class="username">@<%= tweet.username %></span>
-                        <span class="time">· <%= new Date(tweet.created_at).toLocaleDateString() %></span>
+            <div class="tweet-card">
+                <div class="d-flex gap-3">
+                    <div class="flex-shrink-0">
+                        <div class="rounded-circle bg-secondary" style="width: 48px; height: 48px;"></div>
                     </div>
-                    <div class="tweetContent"><%= tweet.content %></div>
+                    <div class="flex-grow-1">
+                        <div class="d-flex align-items-center gap-1 mb-1">
+                            <span class="fw-bold"><%= tweet.display_name %></span>
+                            <span class="text-secondary small">@<%= tweet.username %></span>
+                            <span class="text-secondary small">· <%= new Date(tweet.created_at).toLocaleDateString() %></span>
+                        </div>
+                        <a href="/tweet/<%= tweet.id %>" class="text-white text-decoration-none d-block">
+                            <p class="mb-0" style="white-space: pre-wrap;"><%= tweet.content %></p>
+                        </a>
+                    </div>
                 </div>
             </div>
         <% }) %>
     <% } else { %>
-        <p class="noTweets">No tweets from this user yet.</p>
+        <div class="p-5 text-center text-secondary">
+            <p>No tweets from this user yet.</p>
+        </div>
     <% } %>
 </div>
